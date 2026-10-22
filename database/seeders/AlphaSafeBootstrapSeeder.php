@@ -2,13 +2,20 @@
 
 namespace Database\Seeders;
 
+use App\Models\Department;
+use App\Models\LegalEntity;
+use App\Models\Location;
 use App\Models\Permission;
+use App\Models\Requisition;
+use App\Models\RequisitionVersion;
 use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\TenantMembership;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class AlphaSafeBootstrapSeeder extends Seeder
 {
@@ -140,7 +147,6 @@ class AlphaSafeBootstrapSeeder extends Seeder
             $roleMap[$slug] = $role;
         }
 
-        // Only seed synthetic demo tenants and demo personas in non-production environments
         if (app()->environment(['local', 'testing'])) {
             $tenantA = Tenant::updateOrCreate(
                 ['slug' => 'acme-demo'],
@@ -242,6 +248,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
             ];
 
             $defaultPasswordHash = Hash::make('AlphaDemo#2026!');
+            $createdUsers = [];
 
             foreach ($demoUsers as $u) {
                 $user = User::updateOrCreate(
@@ -264,6 +271,152 @@ class AlphaSafeBootstrapSeeder extends Seeder
                     [
                         'status' => 'ACTIVE',
                         'abac_scope' => ['scope_mode' => 'tenant_scoped'],
+                    ]
+                );
+
+                $createdUsers[$u['email']] = $user;
+            }
+
+            if (Schema::hasTable('legal_entities') && Schema::hasTable('requisitions')) {
+                $acmeLe = LegalEntity::withoutTenantScope()->updateOrCreate(
+                    ['tenant_id' => $tenantA->id, 'code' => 'USMF'],
+                    [
+                        'uuid' => (string) Str::uuid(),
+                        'name' => 'Acme US Manufacturing & Cloud LLC (Demo)',
+                        'country_code' => 'US',
+                        'currency_code' => 'USD',
+                        'dynamics_company_code' => 'USMF',
+                        'is_active' => true,
+                    ]
+                );
+
+                $acmeDept = Department::withoutTenantScope()->updateOrCreate(
+                    ['tenant_id' => $tenantA->id, 'code' => 'ENG-AI'],
+                    [
+                        'uuid' => (string) Str::uuid(),
+                        'legal_entity_id' => $acmeLe->id,
+                        'name' => 'AI Platform & Distributed Systems',
+                        'cost_centre_code' => 'CC-4100',
+                        'head_user_id' => $createdUsers['manager@acme-demo.test']->id,
+                        'is_active' => true,
+                    ]
+                );
+
+                $acmeLoc = Location::withoutTenantScope()->updateOrCreate(
+                    ['tenant_id' => $tenantA->id, 'code' => 'NYC-HQ'],
+                    [
+                        'uuid' => (string) Str::uuid(),
+                        'name' => 'New York Innovation Hub',
+                        'city' => 'New York',
+                        'country_code' => 'US',
+                        'timezone' => 'America/New_York',
+                        'work_mode' => 'HYBRID',
+                        'is_active' => true,
+                    ]
+                );
+
+                $reqA = Requisition::withoutTenantScope()->updateOrCreate(
+                    ['tenant_id' => $tenantA->id, 'requisition_number' => 'REQ-2026-0101'],
+                    [
+                        'uuid' => (string) Str::uuid(),
+                        'title' => 'Senior AI Platform Architect (Demo)',
+                        'department_id' => $acmeDept->id,
+                        'location_id' => $acmeLoc->id,
+                        'legal_entity_id' => $acmeLe->id,
+                        'hiring_manager_user_id' => $createdUsers['manager@acme-demo.test']->id,
+                        'recruiter_user_id' => $createdUsers['recruiter@acme-demo.test']->id,
+                        'created_by_user_id' => $createdUsers['recruiter@acme-demo.test']->id,
+                        'headcount' => 2,
+                        'filled_headcount' => 0,
+                        'employment_type' => 'FULL_TIME',
+                        'requisition_reason' => 'NEW_ROLE',
+                        'budget_reference' => 'BUD-2026-AI-101',
+                        'salary_min' => 165000,
+                        'salary_max' => 210000,
+                        'currency_code' => 'USD',
+                        'target_start_date' => '2026-12-01',
+                        'justification' => 'Expand AI platform architecture and Dynamics 365 HR integration reliability team.',
+                        'status' => Requisition::STATUS_OPEN,
+                        'current_version' => 1,
+                        'approved_version' => 1,
+                        'approved_by_user_id' => $createdUsers['manager@acme-demo.test']->id,
+                        'approved_at' => now(),
+                    ]
+                );
+
+                RequisitionVersion::withoutTenantScope()->updateOrCreate(
+                    ['requisition_id' => $reqA->id, 'version_number' => 1],
+                    [
+                        'tenant_id' => $tenantA->id,
+                        'snapshot' => ['title' => $reqA->title, 'budget_reference' => $reqA->budget_reference],
+                        'change_summary' => 'Seeded demo open requisition',
+                        'created_by_user_id' => $createdUsers['recruiter@acme-demo.test']->id,
+                        'created_at' => now(),
+                    ]
+                );
+
+                // Seed Tenant B (Globex) isolated organization & requisition
+                $globexLe = LegalEntity::withoutTenantScope()->updateOrCreate(
+                    ['tenant_id' => $tenantB->id, 'code' => 'GBPM'],
+                    [
+                        'uuid' => (string) Str::uuid(),
+                        'name' => 'Globex UK Medical Systems Ltd (Demo)',
+                        'country_code' => 'GB',
+                        'currency_code' => 'GBP',
+                        'dynamics_company_code' => 'GBPM',
+                        'is_active' => true,
+                    ]
+                );
+
+                $globexDept = Department::withoutTenantScope()->updateOrCreate(
+                    ['tenant_id' => $tenantB->id, 'code' => 'CLIN-INFO'],
+                    [
+                        'uuid' => (string) Str::uuid(),
+                        'legal_entity_id' => $globexLe->id,
+                        'name' => 'Clinical Informatics',
+                        'cost_centre_code' => 'CC-9900',
+                        'head_user_id' => $createdUsers['admin@globex-demo.test']->id,
+                        'is_active' => true,
+                    ]
+                );
+
+                $globexLoc = Location::withoutTenantScope()->updateOrCreate(
+                    ['tenant_id' => $tenantB->id, 'code' => 'LON-HQ'],
+                    [
+                        'uuid' => (string) Str::uuid(),
+                        'name' => 'London Clinical Centre',
+                        'city' => 'London',
+                        'country_code' => 'GB',
+                        'timezone' => 'Europe/London',
+                        'work_mode' => 'ONSITE',
+                        'is_active' => true,
+                    ]
+                );
+
+                Requisition::withoutTenantScope()->updateOrCreate(
+                    ['tenant_id' => $tenantB->id, 'requisition_number' => 'REQ-2026-0901'],
+                    [
+                        'uuid' => (string) Str::uuid(),
+                        'title' => 'Lead Clinical Systems Engineer (Globex Demo)',
+                        'department_id' => $globexDept->id,
+                        'location_id' => $globexLoc->id,
+                        'legal_entity_id' => $globexLe->id,
+                        'hiring_manager_user_id' => $createdUsers['admin@globex-demo.test']->id,
+                        'created_by_user_id' => $createdUsers['admin@globex-demo.test']->id,
+                        'headcount' => 1,
+                        'filled_headcount' => 0,
+                        'employment_type' => 'FULL_TIME',
+                        'requisition_reason' => 'NEW_ROLE',
+                        'budget_reference' => 'BUD-GLOBEX-901',
+                        'salary_min' => 85000,
+                        'salary_max' => 110000,
+                        'currency_code' => 'GBP',
+                        'justification' => 'Clinical data interoperability lead.',
+                        'status' => Requisition::STATUS_OPEN,
+                        'current_version' => 1,
+                        'approved_version' => 1,
+                        'approved_by_user_id' => $createdUsers['admin@globex-demo.test']->id,
+                        'approved_at' => now(),
                     ]
                 );
             }
