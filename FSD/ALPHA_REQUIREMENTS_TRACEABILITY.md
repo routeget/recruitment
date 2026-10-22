@@ -2,7 +2,7 @@
 
 **Document Status:** Completed (Alpha v0.1.0-alpha)  
 **Last Updated:** 2026-10-22  
-**Authoritative Specification:** [`UNIFIED_RECRUITMENT_AI_PLATFORM_LEVEL_2_SPECIFICATION_v2.0.md`](./UNIFIED_RECRUITMENT_AI_PLATFORM_LEVEL_2_SPECIFICATION_v2.0.md)
+**Authoritative Specifications:** [`UNIFIED_RECRUITMENT_AI_PLATFORM_LEVEL_2_SPECIFICATION_v2.0.md`](./UNIFIED_RECRUITMENT_AI_PLATFORM_LEVEL_2_SPECIFICATION_v2.0.md) and [`MICROSOFT_ENTRA_ID_ENTERPRISE_SSO_LEVEL_2_SPECIFICATION.md`](./MICROSOFT_ENTRA_ID_ENTERPRISE_SSO_LEVEL_2_SPECIFICATION.md)
 
 ---
 
@@ -11,6 +11,7 @@
 | Spec Section | Requirement Summary | Code Implementation | Automated Test Coverage | Live HTTPS Verification (`https://career.tringers.com`) | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **§3 & §4** | Multi-Tenant Isolation, RBAC/ABAC Personas, Scoped Support Access, Append-Only `AuditEvent` | `app/Models/Concerns/BelongsToTenant.php`, `app/Services/TenantContextService.php`, `app/Services/AuditService.php`, `app/Http/Middleware/EnforceTenantAndSecurityContext.php` | `tests/Feature/TenantIsolationAndAuthTest.php` (6 tests) | `/login`, `/dashboard`, `/admin/tenants-iam`, `/admin/audit-events`, `/system/diagnostics` (`HTTP 200`) | **IMPLEMENTED & VERIFIED** |
+| **SSO-01** | Enterprise Microsoft Entra ID SSO for Microsoft 365 work/school accounts using OIDC authorization-code + PKCE, explicit tenant mapping, secure identity linking, and existing RBAC/ABAC | Not yet implemented; specification: `MICROSOFT_ENTRA_ID_ENTERPRISE_SSO_LEVEL_2_SPECIFICATION.md` | Required: OIDC validation, state/nonce/PKCE, issuer/audience/tid, account-linking, tenant isolation, session rotation, role-escalation and secret-leak tests | Pending Entra app registration and dedicated test tenant; do not claim live verification | **REQUIRED / NOT IMPLEMENTED** |
 | **§5.1 & §5.2** | Organization Setup (`LegalEntity`, `Department`, `Location`) & Workforce Requisitions (`Requisition`, `RequisitionVersion`, `RequisitionApproval`) | `app/Services/RequisitionService.php`, `app/Http/Controllers/OrganizationController.php`, `app/Http/Controllers/RequisitionController.php` | `tests/Feature/RequisitionLifecycleTest.php` (5 tests) | `/organization`, `/requisitions` (`HTTP 200`) | **IMPLEMENTED & VERIFIED** |
 | **§5.3 & §5.4** | Job Descriptions, Versioning, Public Career Portal, Schema.org `JobPosting` JSON-LD, `/sitemap.xml`, `/robots.txt` | `app/Services/JobPublishingService.php`, `app/Http/Controllers/JobPostingController.php`, `app/Http/Controllers/CareerPortalController.php` | `tests/Feature/CareerPortalAndApplicationLifecycleTest.php` | `/jobs`, `/careers`, `/sitemap.xml`, `/robots.txt` (`HTTP 200`) | **IMPLEMENTED & VERIFIED** |
 | **§5.5 & §5.6** | Candidate CRM, Consent Enforcement, Email Deduplication, Private `CandidateDocument` Storage (SHA-256, Executable Rejection), Application Stage Machine | `app/Services/CandidateAndApplicationService.php`, `app/Http/Controllers/CandidateAndApplicationController.php` | `tests/Feature/CareerPortalAndApplicationLifecycleTest.php` (4 tests) | `/candidates`, `/applications` (`HTTP 200`) | **IMPLEMENTED & VERIFIED** |
