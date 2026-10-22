@@ -5,9 +5,15 @@
 @section('content')
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="h4 fw-bold mb-1">Microsoft Dynamics 365 Finance HR Connector &amp; Field Ownership</h2>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Dynamics 365 HR Connector</li>
+            </ol>
+        </nav>
+        <h1 class="h3 fw-bold mb-1">Microsoft Dynamics 365 Finance HR Connector &amp; Field Ownership</h1>
         <p class="text-muted small mb-0">
-            Safe-by-default enterprise connector with explicit field ownership matrix, legal entity mapping, dry-run validation, and mandatory <code>HRH-01..08</code> handover gate enforcement.
+            Safe-by-default enterprise connector with explicit field ownership matrix, legal entity mapping, dry-run validation, and mandatory dual-control HR handover gate enforcement.
         </p>
     </div>
     <span class="badge bg-{{ $config->real_employee_creation_enabled ? 'warning text-dark' : 'success' }}">
@@ -17,7 +23,7 @@
 
 <div class="row g-4 mb-4">
     <div class="col-lg-5">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">Connector Environment &amp; Safety Mode</div>
             <div class="card-body">
                 <form method="POST" action="{{ route('dynamics.config.update') }}">
@@ -45,7 +51,7 @@
     </div>
 
     <div class="col-lg-7">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">Canonical Field-Ownership Matrix (URAP vs Dynamics 365 Finance HR)</div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
@@ -73,7 +79,7 @@
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
+<div class="card stat-card">
     <div class="card-header bg-white fw-semibold py-3">Dry-Run Payload Validation &amp; Synced Worker References</div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">

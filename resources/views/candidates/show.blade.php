@@ -30,9 +30,9 @@
                 default => 'bg-secondary',
             };
         @endphp
-        <span class="badge {{ $statusBadgeClass }}">AI Resume Parse: {{ $candidate->resume_parse_status ?? 'NONE' }}</span>
+        <span class="badge {{ $statusBadgeClass }}">AI Resume Parse: {{ ucwords(strtolower(str_replace('_', ' ', $candidate->resume_parse_status ?? 'NONE'))) }}</span>
         @if($candidate->resume_schema_version)
-            <span class="badge bg-light text-dark border ms-1">{{ $candidate->resume_schema_version }}</span>
+            <span class="badge bg-light text-dark border ms-1">{{ $candidate->resume_schema_version === 'RESUME_SCHEMA_v1.0' ? 'Schema v1.0' : $candidate->resume_schema_version }}</span>
         @endif
     </div>
 </div>
@@ -205,11 +205,11 @@
             <div class="small text-muted">Zero-hallucination structured extraction with prompt-injection defense and side-by-side human correction.</div>
         </div>
         @if(isset($latestParseJob) && $latestParseJob)
-            <div class="d-flex gap-2 align-items-center">
+            <div class="d-flex gap-2 align-items-center flex-wrap">
                 <span class="badge bg-light text-dark border">
-                    Provider: {{ strtoupper($latestParseJob->provider_key ?? 'N/A') }} ({{ $latestParseJob->model_name ?? 'N/A' }})
+                    Engine: {{ $latestParseJob->provider_display_name }} ({{ $latestParseJob->model_display_name }})
                 </span>
-                <span class="badge bg-light text-dark border">Schema: {{ $latestParseJob->schema_version }}</span>
+                <span class="badge bg-light text-dark border">{{ $latestParseJob->schema_display_label }}</span>
                 @if($latestParseJob->prompt_injection_detected)
                     <span class="badge bg-danger">Prompt Injection Neutralized</span>
                 @else
@@ -230,7 +230,7 @@
 
             @if($latestParseJob->error_message)
                 <div class="alert alert-{{ $latestParseJob->status === 'FAILED' ? 'danger' : 'warning' }} small mb-3">
-                    <strong>{{ $latestParseJob->error_code ?? $latestParseJob->status }}:</strong> {{ $latestParseJob->error_message }}
+                    <strong>{{ ucwords(strtolower(str_replace('_', ' ', $latestParseJob->error_code ?? $latestParseJob->status))) }}:</strong> {{ $latestParseJob->error_message }}
                 </div>
             @endif
 
@@ -238,7 +238,7 @@
                 <div class="alert alert-info py-2 px-3 small mb-3">
                     <strong>Unstated / Missing Resume Fields (Preserved as Null without Hallucination):</strong>
                     @foreach($missingFields as $mf)
-                        <code class="me-1">{{ $mf }}</code>
+                        <span class="badge bg-white text-dark border ms-1">{{ ucwords(str_replace(['_', '.'], ' ', $mf)) }}</span>
                     @endforeach
                 </div>
             @endif

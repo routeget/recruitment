@@ -51,6 +51,9 @@ return Application::configure(basePath: dirname(__DIR__))
                 ], 409);
             }
 
-            return response($e->errorCode.': '.$e->getMessage(), 409);
+            return response()->view('errors.409', [
+                'exception' => $e,
+                'errorCode' => $e->errorCode,
+            ], 409);
         });
     })->create();

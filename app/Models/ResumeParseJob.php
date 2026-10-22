@@ -122,4 +122,39 @@ class ResumeParseJob extends Model
 
         return is_array($this->parsed_data) ? $this->parsed_data : [];
     }
+
+    public function getProviderDisplayNameAttribute(): string
+    {
+        if (in_array($this->execution_mode, ['local_governed_analyzer', 'fallback_local_governed_analyzer'], true)) {
+            return 'Built-In Structured Rule Analyzer';
+        }
+
+        return match ($this->provider_key) {
+            'claude' => 'Anthropic Claude',
+            'gemini' => 'Google Gemini',
+            'openai' => 'OpenAI',
+            'deterministic_fake' => 'Built-In Structured Rule Analyzer',
+            default => strtoupper((string) ($this->provider_key ?: 'AI Engine')),
+        };
+    }
+
+    public function getModelDisplayNameAttribute(): string
+    {
+        if (in_array($this->execution_mode, ['local_governed_analyzer', 'fallback_local_governed_analyzer'], true)) {
+            return 'Governed Rule Engine v1.0';
+        }
+
+        return match ($this->model_name) {
+            'urap-deterministic-v1' => 'Governed Rule Engine v1.0',
+            default => (string) ($this->model_name ?: 'Default Model'),
+        };
+    }
+
+    public function getSchemaDisplayLabelAttribute(): string
+    {
+        return match ($this->schema_version) {
+            'RESUME_SCHEMA_v1.0' => 'Schema v1.0',
+            default => (string) ($this->schema_version ?: 'Schema v1.0'),
+        };
+    }
 }

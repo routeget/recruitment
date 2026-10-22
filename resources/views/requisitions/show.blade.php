@@ -174,7 +174,7 @@
                 <div class="card-body">
                     @if((int)$requisition->created_by_user_id === (int)auth()->id())
                         <div class="alert alert-warning small mb-2">
-                            <strong>Self-Approval Prohibited:</strong> You created this requisition ({{ auth()->user()->email }}). Per Specification §4, a different authorized approver must approve it.
+                            <strong>Self-Approval Prohibited:</strong> You created this requisition ({{ auth()->user()->email }}). Per enterprise separation-of-duties policy, a different authorized approver must approve it.
                         </div>
                     @endif
                     <form method="POST" action="{{ route('requisitions.approve', $requisition->id) }}">

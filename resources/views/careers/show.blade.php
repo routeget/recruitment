@@ -84,10 +84,10 @@
                             <p class="text-secondary">{{ $job->summary }}</p>
 
                             <h2 class="h5 fw-bold text-dark mt-4">Key Responsibilities</h2>
-                            <pre class="bg-light p-3 rounded border small" style="white-space: pre-wrap;">{{ $job->responsibilities }}</pre>
+                            <div class="bg-light p-3 rounded border text-secondary" style="white-space: pre-line; line-height: 1.65;">{{ $job->responsibilities }}</div>
 
                             <h2 class="h5 fw-bold text-dark mt-4">Qualifications &amp; Experience</h2>
-                            <pre class="bg-light p-3 rounded border small" style="white-space: pre-wrap;">{{ $job->qualifications }}</pre>
+                            <div class="bg-light p-3 rounded border text-secondary" style="white-space: pre-line; line-height: 1.65;">{{ $job->qualifications }}</div>
 
                             <h2 class="h6 fw-bold text-dark mt-3">Skills</h2>
                             <div class="d-flex flex-wrap gap-2">
@@ -121,7 +121,7 @@
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox" id="extract_consent_given" name="consent_given" value="1" required>
                                         <label class="form-check-label small text-secondary" for="extract_consent_given">
-                                            I consent to automated resume parsing under the {{ $tenant->name }} Privacy Notice (<code>PRIVACY-v2.0</code>). *
+                                            I consent to automated resume parsing under the {{ $tenant->name }} Privacy Notice (v2.0). *
                                         </label>
                                     </div>
                                 </div>
@@ -140,7 +140,11 @@
                                 <div class="alert alert-info py-2 px-3 small mb-3">
                                     <strong>AI Pre-Fill Active:</strong> Please review and complete the extracted fields below before final submission.
                                     @if(!empty($pf['missing_fields']))
-                                        <div class="mt-1">Unstated fields left blank: <code>{{ implode(', ', (array)$pf['missing_fields']) }}</code></div>
+                                        <div class="mt-1">Unstated fields left blank:
+                                            @foreach((array)$pf['missing_fields'] as $mf)
+                                                <span class="badge bg-white text-dark border ms-1">{{ ucwords(str_replace('_', ' ', $mf)) }}</span>
+                                            @endforeach
+                                        </div>
                                     @endif
                                 </div>
                             @endif

@@ -69,4 +69,33 @@ class AiTaskRun extends Model
     {
         return $this->belongsTo(User::class, 'reviewed_by_user_id');
     }
+
+    public function getProviderDisplayNameAttribute(): string
+    {
+        return match ($this->provider_key) {
+            'claude' => 'Anthropic Claude',
+            'gemini' => 'Google Gemini',
+            'openai' => 'OpenAI',
+            'deterministic_fake' => 'Built-In Structured Rule Analyzer',
+            default => strtoupper((string) ($this->provider_key ?: 'AI Engine')),
+        };
+    }
+
+    public function getModelDisplayNameAttribute(): string
+    {
+        return match ($this->model_name) {
+            'urap-deterministic-v1' => 'Governed Rule Engine v1.0',
+            default => (string) ($this->model_name ?: 'Default Model'),
+        };
+    }
+
+    public function getExecutionModeDisplayAttribute(): string
+    {
+        return match ($this->execution_mode) {
+            'live_http_adapter' => 'Live Provider Adapter',
+            'fallback_local_governed_analyzer' => 'Fallback Governed Analyzer',
+            'local_governed_analyzer' => 'Built-In Governed Analyzer',
+            default => 'Structured Engine',
+        };
+    }
 }

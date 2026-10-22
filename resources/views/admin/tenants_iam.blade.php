@@ -57,7 +57,7 @@
             </div>
             <div class="card-body">
                 <p class="small text-muted">
-                    Per Specification §§4–5, cross-tenant support access requires a ticket reference and justification, logs an immutable security event, and prohibits routine candidate-PII browsing.
+                    Per enterprise security governance, cross-tenant support access requires a ticket reference and justification, logs an immutable security event, and prohibits routine candidate-PII browsing.
                 </p>
                 <form method="POST" action="{{ route('platform-admin.support-context') }}">
                     @csrf
@@ -107,8 +107,11 @@
                                     </td>
                                     <td><span class="badge bg-primary">{{ $m->role?->slug }}</span></td>
                                     <td><span class="badge bg-success">{{ $m->status }}</span></td>
-                                    <td class="small text-muted">
-                                        <code>{{ json_encode($m->abac_scope) }}</code>
+                                    <td class="small">
+                                        @php
+                                            $scopeMode = is_array($m->abac_scope) ? ($m->abac_scope['scope_mode'] ?? 'tenant_scoped') : 'tenant_scoped';
+                                        @endphp
+                                        <span class="badge bg-light text-dark border">{{ ucwords(str_replace('_', ' ', (string) $scopeMode)) }}</span>
                                     </td>
                                 </tr>
                             @endforeach

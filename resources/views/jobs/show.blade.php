@@ -66,10 +66,10 @@
                 <p class="small">{{ $job->summary }}</p>
 
                 <h2 class="h6 fw-bold">Responsibilities</h2>
-                <pre class="small bg-light p-3 rounded border mb-3" style="white-space: pre-wrap;">{{ $job->responsibilities }}</pre>
+                <div class="small bg-light p-3 rounded border mb-3" style="white-space: pre-line; line-height: 1.6;">{{ $job->responsibilities }}</div>
 
                 <h2 class="h6 fw-bold">Qualifications</h2>
-                <pre class="small bg-light p-3 rounded border mb-3" style="white-space: pre-wrap;">{{ $job->qualifications }}</pre>
+                <div class="small bg-light p-3 rounded border mb-3" style="white-space: pre-line; line-height: 1.6;">{{ $job->qualifications }}</div>
 
                 <h2 class="h6 fw-bold">Required Skills</h2>
                 <div class="d-flex flex-wrap gap-1">
@@ -90,9 +90,14 @@
                     <span class="badge {{ $job->status === 'PUBLISHED' ? 'bg-success' : 'bg-secondary' }}">{{ $job->status }}</span>
                 </div>
                 <hr>
-                <div class="fw-semibold mb-2">External Job Board Connectors:</div>
-                <div class="alert alert-secondary small mb-0">
-                    <strong>LinkedIn Jobs / Indeed Feed:</strong> Marked <code>UNAVAILABLE_UNCONFIGURED</code> until real vendor connector credentials are provisioned.
+                <div class="fw-semibold mb-2">External Job Board Syndication:</div>
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span>LinkedIn Jobs</span>
+                    <span class="badge bg-light text-secondary border">Not Configured</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>Indeed Job Feed</span>
+                    <span class="badge bg-light text-secondary border">Not Configured</span>
                 </div>
             </div>
         </div>

@@ -5,7 +5,13 @@
 @section('content')
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
     <div>
-        <h2 class="h4 fw-bold mb-1">Provider-Neutral AI Gateway &amp; Governance Console</h2>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active" aria-current="page">AI Gateway &amp; Governance</li>
+            </ol>
+        </nav>
+        <h1 class="h3 fw-bold mb-1">Provider-Neutral AI Gateway &amp; Governance Console</h1>
         <p class="text-muted small mb-0">
             Centralized multi-provider AI orchestration supporting Anthropic Claude, Google Gemini, OpenAI, and the Built-In Structured Rule Analyzer with encrypted credentials, task-specific routing, PII redaction, and mandatory human review.
         </p>
@@ -21,7 +27,7 @@
 @endif
 
 {{-- 1. Provider Adapters, Encrypted Credentials & Connection Validation --}}
-<div class="card border-0 shadow-sm mb-4">
+<div class="card stat-card mb-4">
     <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
         <div>
             <span class="fw-bold">Runtime AI Provider Adapters, Encrypted Credentials &amp; Connection Health</span>
@@ -48,19 +54,18 @@
                         <div class="d-flex justify-content-between align-items-start mb-2">
                             <div>
                                 <div class="fw-bold">
-                                    {{ $prov->display_name ?? strtoupper($prov->provider_key) }}
-                                    <code class="ms-1 small">({{ $prov->provider_key }})</code>
+                                    {{ $prov->display_name }}
                                     @if($prov->is_primary)
                                         <span class="badge bg-primary ms-1">Primary</span>
                                     @endif
                                 </div>
                                 <div class="small text-muted">
-                                    Active Model: <code>{{ $prov->model_name }}</code> |
+                                    Active Model: <code>{{ $prov->model_name === 'urap-deterministic-v1' ? 'Governed Rule Engine v1.0' : $prov->model_name }}</code> |
                                     Spend: <strong>${{ number_format($prov->current_spend_minor / 100, 2) }}</strong> / ${{ number_format($prov->monthly_budget_minor / 100, 2) }}
                                 </div>
                             </div>
                             <div class="text-end">
-                                <span class="badge {{ $statusBadge }}">{{ $prov->connection_status ?? 'UNCONFIGURED' }}</span>
+                                <span class="badge {{ $statusBadge }}">{{ ucwords(strtolower(str_replace('_', ' ', $prov->connection_status ?? 'UNCONFIGURED'))) }}</span>
                                 @if($prov->kill_switch_engaged)
                                     <span class="badge bg-danger ms-1">KILL SWITCH ENGAGED</span>
                                 @endif
@@ -82,7 +87,7 @@
                                 <label class="form-label small fw-semibold mb-1">Configured Model</label>
                                 <select name="model_name" class="form-select form-select-sm">
                                     @foreach($supportedModels as $mName)
-                                        <option value="{{ $mName }}" @selected($prov->model_name === $mName)>{{ $mName }}</option>
+                                        <option value="{{ $mName }}" @selected($prov->model_name === $mName)>{{ $mName === 'urap-deterministic-v1' ? 'Governed Rule Engine v1.0' : $mName }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -94,7 +99,7 @@
                                     @foreach($providers as $fbProv)
                                         @if($fbProv->provider_key !== $prov->provider_key)
                                             <option value="{{ $fbProv->provider_key }}" @selected($prov->fallback_provider_key === $fbProv->provider_key)>
-                                                {{ strtoupper($fbProv->provider_key) }}
+                                                {{ $fbProv->display_name }}
                                             </option>
                                         @endif
                                     @endforeach
@@ -176,7 +181,7 @@
 
 {{-- 2. Task-Specific Routing Matrix --}}
 @if(isset($taskRoutes) && $taskRoutes->count() > 0)
-<div class="card border-0 shadow-sm mb-4">
+<div class="card stat-card mb-4">
     <div class="card-header bg-white fw-bold py-3">
         Task-Specific AI Routing &amp; Quality Thresholds
         <span class="text-muted fw-normal small ms-2">Assign primary and fallback providers per recruitment workflow task</span>
@@ -204,10 +209,10 @@
                             </td>
                             <td>
                                 <div class="d-flex gap-1">
-                                    <select name="primary_provider_key" class="form-select form-select-sm" style="max-width: 145px;">
+                                    <select name="primary_provider_key" class="form-select form-select-sm" style="max-width: 175px;">
                                         @foreach($providers as $prov)
                                             <option value="{{ $prov->provider_key }}" @selected($routeItem->primary_provider_key === $prov->provider_key)>
-                                                {{ strtoupper($prov->provider_key) }}
+                                                {{ $prov->display_name }}
                                             </option>
                                         @endforeach
                                     </select>
@@ -215,11 +220,11 @@
                                 </div>
                             </td>
                             <td>
-                                <select name="fallback_provider_key" class="form-select form-select-sm" style="max-width: 160px;">
+                                <select name="fallback_provider_key" class="form-select form-select-sm" style="max-width: 185px;">
                                     <option value="">None</option>
                                     @foreach($providers as $prov)
                                         <option value="{{ $prov->provider_key }}" @selected($routeItem->fallback_provider_key === $prov->provider_key)>
-                                            {{ strtoupper($prov->provider_key) }}
+                                            {{ $prov->display_name }}
                                         </option>
                                     @endforeach
                                 </select>
@@ -253,7 +258,7 @@
 {{-- 3. Execute Task & Prompt Version Registry --}}
 <div class="row g-4 mb-4">
     <div class="col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">Execute Governed Recruitment AI Task</div>
             <div class="card-body">
                 <form method="POST" action="{{ route('ai.execute') }}">
@@ -273,7 +278,7 @@
                                 <option value="auto">AUTO (Task Route Policy)</option>
                                 @foreach($providers as $prov)
                                     <option value="{{ $prov->provider_key }}">
-                                        {{ strtoupper($prov->provider_key) }} — {{ $prov->model_name }} {{ $prov->kill_switch_engaged ? '[KILL SWITCH ON]' : '' }}
+                                        {{ $prov->display_name }} — {{ $prov->model_name === 'urap-deterministic-v1' ? 'Governed Rule Engine v1.0' : $prov->model_name }} {{ $prov->kill_switch_engaged ? '[KILL SWITCH ON]' : '' }}
                                     </option>
                                 @endforeach
                             </select>
@@ -298,7 +303,7 @@
     </div>
 
     <div class="col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">Versioned System Prompt Registry ({{ $prompts->count() }})</div>
             <div class="card-body">
                 <form method="POST" action="{{ route('ai.prompts.store') }}" class="row g-2 mb-3">
@@ -354,7 +359,7 @@
 </div>
 
 {{-- 4. AI Task Execution Ledger --}}
-<div class="card border-0 shadow-sm">
+<div class="card stat-card">
     <div class="card-header bg-white fw-semibold py-3">AI Task Execution Ledger &amp; Human Review Sign-Off ({{ $taskRuns->count() }})</div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
@@ -362,7 +367,7 @@
                 <tr>
                     <th>Task &amp; Provider</th>
                     <th>Redacted Input Summary</th>
-                    <th>Structured JSON Output</th>
+                    <th>Structured Output Summary</th>
                     <th>Schema &amp; Cost</th>
                     <th>Human Review</th>
                 </tr>
@@ -373,20 +378,43 @@
                         <td>
                             <div class="fw-semibold"><code>{{ $run->task_type }}</code></div>
                             <div class="small text-muted">
-                                {{ strtoupper($run->provider_key) }} ({{ $run->model_name }}) — Prompt v{{ $run->prompt_version }}
+                                {{ $run->provider_display_name }} ({{ $run->model_display_name }}) — Prompt v{{ $run->prompt_version }}
                             </div>
                             <div class="mt-1">
-                                <span class="badge bg-light text-dark border">{{ $run->execution_mode ?? 'STRUCTURED_ENGINE' }}</span>
+                                <span class="badge bg-light text-dark border">{{ $run->execution_mode_display }}</span>
                                 @if($run->fallback_used)
-                                    <span class="badge bg-warning text-dark">Fallback from {{ $run->primary_provider_key }}</span>
+                                    <span class="badge bg-warning text-dark">Fallback Activated</span>
                                 @endif
                             </div>
                         </td>
                         <td class="small" style="max-width: 260px;">
-                            <code>{{ $run->redacted_input_summary }}</code>
+                            <div class="text-secondary">{{ $run->redacted_input_summary }}</div>
                         </td>
-                        <td class="small" style="max-width: 340px;">
-                            <pre class="mb-0 bg-light p-2 rounded small" style="max-height: 110px; overflow-y: auto;">{{ json_encode($run->structured_output, JSON_PRETTY_PRINT) }}</pre>
+                        <td class="small" style="max-width: 360px;">
+                            @php
+                                $out = is_array($run->structured_output) ? $run->structured_output : [];
+                            @endphp
+                            <div class="d-flex flex-wrap gap-1 mb-1">
+                                @if(isset($out['recommendation']))
+                                    <span class="badge bg-primary">{{ $out['recommendation'] }}</span>
+                                @endif
+                                @if(isset($out['match_score']))
+                                    <span class="badge bg-info text-dark">Match: {{ $out['match_score'] }}%</span>
+                                @endif
+                                @if(isset($out['confidence']))
+                                    <span class="badge bg-light text-dark border">Confidence: {{ is_numeric($out['confidence']) ? round(((float) $out['confidence']) * 100).'%' : $out['confidence'] }}</span>
+                                @endif
+                                @if(!empty($out['full_name']))
+                                    <span class="badge bg-light text-dark border">{{ $out['full_name'] }}</span>
+                                @endif
+                                @if(!empty($out['skills']) && is_array($out['skills']))
+                                    <span class="badge bg-light text-dark border">{{ count($out['skills']) }} Skills Extracted</span>
+                                @endif
+                            </div>
+                            <details class="small">
+                                <summary class="text-primary fw-semibold" style="cursor: pointer;">Inspect Structured Output</summary>
+                                <pre class="mb-0 mt-1 bg-light p-2 rounded border small" style="max-height: 110px; overflow-y: auto;">{{ json_encode($run->structured_output, JSON_PRETTY_PRINT) }}</pre>
+                            </details>
                         </td>
                         <td class="small">
                             <span class="badge bg-{{ $run->schema_valid ? 'success' : 'danger' }}">{{ $run->schema_valid ? 'Schema Valid' : 'Invalid' }}</span>

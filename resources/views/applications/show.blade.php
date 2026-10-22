@@ -173,7 +173,7 @@
                 <p class="mb-2"><strong>Cover Note:</strong> {{ $application->cover_note ?? '—' }}</p>
                 <hr>
                 <div class="fw-bold mb-1">Confidential Recruiter Notes (Internal Only):</div>
-                <pre class="bg-light p-2 border rounded small mb-3" style="white-space: pre-wrap;">{{ $application->screening_notes ?? 'No internal notes recorded.' }}</pre>
+                <div class="bg-light p-2 border rounded small mb-3" style="white-space: pre-line; line-height: 1.55;">{{ $application->screening_notes ?? 'No internal notes recorded.' }}</div>
 
                 <div class="fw-bold mb-1">Private Documents:</div>
                 <ul class="list-group list-group-flush">

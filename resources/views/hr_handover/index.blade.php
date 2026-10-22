@@ -5,15 +5,21 @@
 @section('content')
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="h4 fw-bold mb-1">Mandatory HR Validation &amp; Employee Handover Safety Gate</h2>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active" aria-current="page">HR Validation &amp; Handover Gate</li>
+            </ol>
+        </nav>
+        <h1 class="h3 fw-bold mb-1">Mandatory HR Validation &amp; Employee Handover Safety Gate</h1>
         <p class="text-muted small mb-0">
-            Enforces non-negotiable safety rules <code>HRH-01</code> through <code>HRH-08</code>: Accepted Offer Version &rarr; Completed Versioned HR Checklist &rarr; Explicit HR Approver Sign-off &rarr; Atomic Snapshot + Transactional Outbox &rarr; Idempotent Dynamics 365 Finance HR Handover.
+            Enforces dual-control pre-onboarding governance: Accepted Offer Version &rarr; Completed Versioned HR Checklist &rarr; Explicit HR Approver Sign-off &rarr; Atomic Snapshot + Transactional Outbox &rarr; Idempotent Dynamics 365 Finance HR Handover.
         </p>
     </div>
     <span class="badge bg-danger">Mandatory Safety Gate Active</span>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
+<div class="card stat-card mb-4">
     <div class="card-header bg-white fw-semibold py-3">Active HR Validation Cases ({{ $cases->count() }})</div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
@@ -123,7 +129,7 @@
                                 <input type="text" name="idempotency_key" class="form-control form-control-sm mb-1" value="hr-handover-{{ substr($case->id, 0, 8) }}-v{{ $case->checklist_version }}">
                                 <select name="simulated_outcome" class="form-select form-select-sm mb-1">
                                     <option value="succeeded">Execute Verified Dynamics 365 Handover</option>
-                                    <option value="ambiguous_timeout">Test Ambiguous Timeout Recovery (HRH-06)</option>
+                                    <option value="ambiguous_timeout">Verify Timeout Reconciliation Gate</option>
                                 </select>
                                 <button type="submit" class="btn btn-sm btn-dark w-100">Dispatch Handover</button>
                             </form>
@@ -141,7 +147,7 @@
 
 <div class="row g-4">
     <div class="col-lg-7">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">HR Handover Execution &amp; Reconciliation Ledger</div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
@@ -200,7 +206,7 @@
     </div>
 
     <div class="col-lg-5">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">External Employee References &amp; Outbox ({{ $employeeRefs->count() }} synced)</div>
             <div class="card-body">
                 <h6 class="small fw-bold text-uppercase text-muted">Dynamics 365 Finance HR Worker References</h6>

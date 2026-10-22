@@ -5,7 +5,13 @@
 @section('content')
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="h4 fw-bold mb-1">REST API Platform (<code>/api/v1</code>), Signed Webhooks &amp; MCP Server (<code>/mcp/v1</code>)</h2>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active" aria-current="page">REST API, Webhooks &amp; MCP</li>
+            </ol>
+        </nav>
+        <h1 class="h3 fw-bold mb-1">REST API Platform (<code>/api/v1</code>), Signed Webhooks &amp; MCP Server (<code>/mcp/v1</code>)</h1>
         <p class="text-muted small mb-0">
             Manage scoped API clients, inspect idempotency records (<code>IDEMPOTENCY_CONFLICT</code> protection), configure HMAC-SHA256 webhooks, and review allowlisted MCP tools.
         </p>
@@ -15,7 +21,7 @@
 
 <div class="row g-4 mb-4">
     <div class="col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">Create Tenant-Scoped API Client (<code>/api/v1</code> &amp; <code>/mcp/v1</code>)</div>
             <div class="card-body">
                 <form method="POST" action="{{ route('integrations.api.clients.store') }}" class="mb-3">
@@ -61,7 +67,7 @@
     </div>
 
     <div class="col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">Outbound HMAC-SHA256 Signed Webhooks</div>
             <div class="card-body">
                 <form method="POST" action="{{ route('integrations.api.webhooks.store') }}" class="row g-2 mb-3">
@@ -113,7 +119,7 @@
 
 <div class="row g-4">
     <div class="col-lg-7">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">Allowlisted MCP Server Tools (<code>/mcp/v1/tools</code> &amp; <code>/mcp/v1/invoke</code>)</div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
@@ -147,7 +153,7 @@
     </div>
 
     <div class="col-lg-5">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">API Idempotency Ledger (<code>Idempotency-Key</code>)</div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">

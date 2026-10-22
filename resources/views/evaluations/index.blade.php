@@ -250,7 +250,16 @@
                                     <td class="small">{{ $dec->decisionMaker?->name }}</td>
                                     <td class="small">
                                         <div>{{ $dec->rationale }}</div>
-                                        <code class="small text-muted">{{ json_encode($dec->evidence_summary) }}</code>
+                                        @php
+                                            $evSummary = is_array($dec->evidence_summary) ? $dec->evidence_summary : [];
+                                        @endphp
+                                        <div class="d-flex flex-wrap gap-1 mt-1">
+                                            <span class="badge bg-light text-dark border">Screenings: {{ $evSummary['screening_evaluations_count'] ?? 0 }}</span>
+                                            <span class="badge bg-light text-dark border">Scorecards: {{ $evSummary['submitted_scorecards_count'] ?? 0 }}</span>
+                                            @if(isset($evSummary['average_interview_rating']) && $evSummary['average_interview_rating'] !== null)
+                                                <span class="badge bg-light text-dark border">Avg Rating: {{ number_format((float) $evSummary['average_interview_rating'], 1) }}</span>
+                                            @endif
+                                        </div>
                                     </td>
                                 </tr>
                             @empty

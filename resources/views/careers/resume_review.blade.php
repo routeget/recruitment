@@ -43,7 +43,7 @@
                         Role: <strong>{{ $job?->title }}</strong> at {{ $tenant->name }} |
                         AI Parse Status:
                         <span class="badge bg-{{ ($parseJob?->status === 'COMPLETED') ? 'success' : (($parseJob?->status === 'REVIEW_REQUIRED') ? 'warning text-dark' : 'danger') }}">
-                            {{ $parseJob?->status ?? 'PENDING' }}
+                            {{ ucwords(strtolower(str_replace('_', ' ', $parseJob?->status ?? 'PENDING'))) }}
                         </span>
                     </p>
                 </div>
@@ -62,7 +62,7 @@
 
             @if($parseJob && $parseJob->error_message)
                 <div class="alert alert-warning mb-4">
-                    <strong>{{ $parseJob->error_code ?? 'REVIEW_REQUIRED' }}:</strong> {{ $parseJob->error_message }}
+                    <strong>{{ ucwords(strtolower(str_replace('_', ' ', $parseJob->error_code ?? 'Verification Required'))) }}:</strong> {{ $parseJob->error_message }}
                     <div class="small mt-1">Please complete or verify your profile details below so the recruitment team has accurate information.</div>
                 </div>
             @endif
@@ -71,7 +71,7 @@
                 <div class="alert alert-info small mb-4">
                     <strong>Fields Not Found in Resume (Left Blank for Your Completion):</strong>
                     @foreach((array)$parseJob->missing_fields as $mf)
-                        <code class="me-1">{{ $mf }}</code>
+                        <span class="badge bg-white text-dark border ms-1">{{ ucwords(str_replace(['_', '.'], ' ', $mf)) }}</span>
                     @endforeach
                 </div>
             @endif

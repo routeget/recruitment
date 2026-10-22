@@ -24,7 +24,7 @@
             <div class="card border p-4 p-lg-5" style="border-radius: var(--cp-radius);">
                 <span class="cp-eyebrow cp-eyebrow-light">LEGAL &amp; PRIVACY GOVERNANCE</span>
                 <h1 class="h2 fw-bold text-dark mb-2">{{ $title }}</h1>
-                <p class="small text-secondary mb-4">{{ $subtitle }} &bull; Policy Reference: <code>PRIVACY-v2.0</code></p>
+                <p class="small text-secondary mb-4">{{ $subtitle }} &bull; Policy Reference: <strong>Privacy &amp; Data Protection Policy v2.0</strong></p>
 
                 @if($pageSlug === 'privacy-policy')
                     <h2 class="h5 fw-bold text-dark mt-3">1. Purpose &amp; Data Controller</h2>
@@ -33,11 +33,11 @@
                     </p>
                     <h2 class="h5 fw-bold text-dark mt-4">2. Private Document Storage &amp; Access Controls</h2>
                     <p class="text-secondary">
-                        Candidate resumes, CVs, and supporting documents are stored exclusively in encrypted private storage (`local_private`). They are never exposed on public URLs or shared across unrelated tenants.
+                        Candidate resumes, CVs, and supporting documents are stored exclusively in encrypted private storage. They are never exposed on public URLs or shared across unrelated organizations.
                     </p>
                     <h2 class="h5 fw-bold text-dark mt-4">3. Retention &amp; Consent Rights</h2>
                     <p class="text-secondary">
-                        Every application records explicit candidate consent (`PRIVACY-v2.0`) and applies the hiring organization's configured retention period. You may request access, correction, or withdrawal of consent by contacting <code>{{ $platformBranding['support_email'] ?? 'support@career.tringers.com' }}</code>.
+                        Every application records explicit candidate consent and applies the hiring organization's configured retention period. You may request access, correction, or withdrawal of consent by contacting <a href="mailto:{{ $platformBranding['support_email'] ?? 'support@career.tringers.com' }}">{{ $platformBranding['support_email'] ?? 'support@career.tringers.com' }}</a>.
                     </p>
                 @elseif($pageSlug === 'terms-of-use')
                     <h2 class="h5 fw-bold text-dark mt-3">1. Career Portal Usage</h2>
@@ -55,7 +55,7 @@
                 @else
                     <h2 class="h5 fw-bold text-dark mt-3">1. Strictly Necessary Cookies</h2>
                     <p class="text-secondary">
-                        We use essential session and CSRF security cookies required for secure form submission, authentication, and cookie consent preference storage (`tringers_cookie_consent`).
+                        We use essential session and CSRF security cookies required for secure form submission, authentication, and cookie consent preference storage.
                     </p>
                     <h2 class="h5 fw-bold text-dark mt-4">2. Privacy-Preserving Analytics</h2>
                     <p class="text-secondary">

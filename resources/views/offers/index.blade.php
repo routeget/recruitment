@@ -5,15 +5,21 @@
 @section('content')
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="h4 fw-bold mb-1">Offers &amp; Immutable Version Management</h2>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Offers &amp; Pre-Boarding</li>
+            </ol>
+        </nav>
+        <h1 class="h3 fw-bold mb-1">Offers &amp; Immutable Version Management</h1>
         <p class="text-muted small mb-0">Generate SHA-256 snapshotted offer versions, issue offers, record candidate acceptance, and manage material revisions.</p>
     </div>
-    <span class="badge bg-warning text-dark">HRH-01 Enforced: Offer Acceptance Never Auto-Creates Employee</span>
+    <span class="badge bg-warning text-dark">Dual-Control Gate: Offer Acceptance Never Auto-Creates Employee</span>
 </div>
 
 <div class="row g-4 mb-4">
     <div class="col-lg-7">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">Create Offer (Immutable Version v1)</div>
             <div class="card-body">
                 <form method="POST" action="{{ route('offers.store') }}">
@@ -103,7 +109,7 @@
     </div>
 
     <div class="col-lg-5">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="card stat-card h-100">
             <div class="card-header bg-white fw-semibold py-3">Create Offer Template</div>
             <div class="card-body">
                 <form method="POST" action="{{ route('offers.templates.store') }}">
@@ -141,7 +147,7 @@
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
+<div class="card stat-card">
     <div class="card-header bg-white fw-semibold py-3 d-flex justify-content-between align-items-center">
         <span>Offers &amp; Version History</span>
         <a href="{{ route('hr-handover.index') }}" class="btn btn-sm btn-outline-dark">Go to HR Validation &amp; Handover Gate &rarr;</a>
@@ -167,7 +173,7 @@
                         </td>
                         <td>
                             <span class="badge bg-{{ $offer->status === 'accepted' ? 'success' : ($offer->status === 'issued' ? 'primary' : 'secondary') }}">
-                                {{ $offer->status }}
+                                {{ ucwords(str_replace('_', ' ', $offer->status)) }}
                             </span>
                         </td>
                         <td class="small">
@@ -180,7 +186,7 @@
                         <td>
                             @if($offer->hrValidationCase)
                                 <span class="badge bg-{{ $offer->hrValidationCase->status === 'handed_over' ? 'success' : ($offer->hrValidationCase->invalidated_at ? 'danger' : 'info text-dark') }}">
-                                    {{ $offer->hrValidationCase->status }}
+                                    {{ ucwords(str_replace('_', ' ', $offer->hrValidationCase->status)) }}
                                 </span>
                             @else
                                 <span class="text-muted small">Not opened yet</span>
@@ -205,7 +211,7 @@
                                 @csrf
                                 <input type="date" name="start_date" class="form-control form-control-sm" style="width: 135px;" value="{{ $offer->currentVersion?->start_date?->addDays(7)->format('Y-m-d') }}">
                                 <input type="number" name="base_salary_minor" class="form-control form-control-sm" style="width: 120px;" value="{{ ($offer->currentVersion?->base_salary_minor ?? 15000000) + 500000 }}">
-                                <button type="submit" class="btn btn-sm btn-outline-warning text-dark">Revise Material Terms (HRH-04)</button>
+                                <button type="submit" class="btn btn-sm btn-outline-warning text-dark">Revise Material Terms</button>
                             </form>
                         </td>
                     </tr>
