@@ -7,16 +7,16 @@
     <div class="p-4 mb-4 rounded-3 bg-dark text-white">
         <div class="container-fluid py-2">
             <span class="badge bg-info text-dark mb-2">{{ $platformBranding['career_portal_banner'] ?? 'Public Career Portal & CMS' }}</span>
-            <h1 class="display-6 fw-bold">Explore Approved Open Positions</h1>
+            <h1 class="display-6 fw-bold">{{ !empty($tenant) ? "Explore Open Positions at ".$tenant->name : "Explore Approved Open Positions" }}</h1>
             <p class="col-md-8 fs-6 text-light mb-0">
-                Only approved, published job postings appear here with verified Schema.org <code>JobPosting</code> metadata.
+                Only approved, published job postings appear here with verified Schema.org <code>JobPosting</code> metadata. @if(!empty($tenant)) Browse current opportunities from {{ $tenant->name }}. @else Browse opportunities across participating companies. @endif
             </p>
         </div>
     </div>
 
     <div class="card stat-card mb-4">
         <div class="card-body">
-            <form method="GET" action="{{ route('careers.index') }}" class="row g-2 align-items-end">
+            <form method="GET" action="{{ !empty($tenant) ? route('tenant.careers.index', ['tenantSlug' => $tenant->slug]) : route('careers.index') }}" class="row g-2 align-items-end">
                 <div class="col-md-4">
                     <label for="q" class="form-label small fw-semibold">Search Keyword / Role</label>
                     <input type="text" id="q" name="q" value="{{ request('q') }}" class="form-control form-control-sm" placeholder="Architect, Engineer, Clinical...">
@@ -41,7 +41,7 @@
                 </div>
                 <div class="col-md-2 d-flex gap-2">
                     <button type="submit" class="btn btn-sm btn-primary w-100">Search</button>
-                    <a href="{{ route('careers.index') }}" class="btn btn-sm btn-outline-secondary">Reset</a>
+                    <a href="{{ !empty($tenant) ? route('tenant.careers.index', ['tenantSlug' => $tenant->slug]) : route('careers.index') }}" class="btn btn-sm btn-outline-secondary">Reset</a>
                 </div>
             </form>
         </div>
