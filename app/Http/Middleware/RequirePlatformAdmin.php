@@ -26,7 +26,7 @@ class RequirePlatformAdmin
                 module: 'platform_admin',
                 action: 'platform_admin.access_denied',
                 outcome: 'DENIED',
-                errorCode: 'PLATFORM_SUPERADMIN_REQUIRED',
+                errorCode: 'PLATFORM_ADMIN_REQUIRED',
                 metadata: [
                     'path' => $request->path(),
                     'method' => $request->method(),
@@ -37,7 +37,7 @@ class RequirePlatformAdmin
             if ($request->expectsJson() || $request->is('api/*') || $request->is('mcp/*')) {
                 return response()->json([
                     'error' => [
-                        'code' => 'PLATFORM_SUPERADMIN_REQUIRED',
+                        'code' => 'PLATFORM_ADMIN_REQUIRED',
                         'message' => 'Active Platform Admin or Platform Super Admin authority is required for this endpoint.',
                         'correlation_id' => $context->getCorrelationId(),
                         'retryable' => false,
@@ -65,14 +65,14 @@ class RequirePlatformAdmin
                 return response()->json([
                     'error' => [
                         'code' => 'PLATFORM_MFA_REQUIRED',
-                        'message' => 'MFA enrollment is required for Platform Super Admin access.',
+                        'message' => 'MFA enrollment is required for Platform Administration access.',
                         'correlation_id' => $context->getCorrelationId(),
                         'retryable' => false,
                     ],
                 ], 403);
             }
 
-            abort(403, 'PLATFORM_MFA_REQUIRED: Multi-Factor Authentication is required for Platform Super Admin access.');
+            abort(403, 'PLATFORM_MFA_REQUIRED: Multi-Factor Authentication is required for Platform Administration access.');
         }
 
         if ((bool) ($user->must_rotate_password ?? false)
