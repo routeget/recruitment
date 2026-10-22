@@ -79,7 +79,7 @@ class AuthController extends Controller
         }
 
         $candidateUser = User::where('email', strtolower($credentials['email']))->first();
-        if ($candidateUser !== null && !$candidateUser->isActiveAccount()) {
+        if ($candidateUser !== null && $candidateUser->isActiveAccount() === false) {
             $audit->record(
                 module: 'auth',
                 action: 'login_blocked_account_suspended',
@@ -116,7 +116,7 @@ class AuthController extends Controller
             ])->onlyInput('email');
         }
 
-        if (!Auth::attempt($credentials, $request->boolean('remember'))) {
+        if (Auth::attempt($credentials, $request->boolean('remember')) === false) {
             RateLimiter::hit($throttleKey, 60);
 
             $audit->record(
@@ -193,7 +193,7 @@ class AuthController extends Controller
         $user = Auth::user();
         $targetTenantId = (int) $validated['tenant_id'];
 
-        if (!$user->isMemberOfTenant($targetTenantId)) {
+        if ($user->isMemberOfTenant($targetTenantId) === false) {
             $audit->record(
                 module: 'security',
                 action: 'unauthorized_tenant_switch',
