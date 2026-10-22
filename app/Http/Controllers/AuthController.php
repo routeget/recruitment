@@ -15,7 +15,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Route;
 use Illuminate\View\View;
 
 class AuthController extends Controller
@@ -23,7 +22,8 @@ class AuthController extends Controller
     public function showLogin(EntraSsoService $entraSso): View|RedirectResponse
     {
         if (Auth::check()) {
-            return redirect()->route(Auth::user()?->isActivePlatformAdmin() ? 'platform-admin.index' : 'organization.home');
+            $authenticatedUser = Auth::user();
+            return redirect()->route($authenticatedUser && $authenticatedUser->isActivePlatformAdmin() ? 'platform-admin.index' : 'organization.home');
         }
 
         $demoPersonas = [];
