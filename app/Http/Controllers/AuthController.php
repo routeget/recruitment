@@ -23,6 +23,7 @@ class AuthController extends Controller
     {
         if (Auth::check()) {
             $authenticatedUser = Auth::user();
+
             return redirect()->route($authenticatedUser && $authenticatedUser->isActivePlatformAdmin() ? 'platform-admin.index' : 'organization.home');
         }
 
