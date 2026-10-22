@@ -21,7 +21,7 @@ class RequirePlatformSuperAdmin
         $context = app(TenantContextService::class);
         $audit = app(AuditService::class);
 
-        if (! ($user instanceof User) || ! $user->isActivePlatformSuperAdmin()) {
+        if (! ($user instanceof User) || ! $user->isActivePlatformAdmin()) {
             $audit->record(
                 module: 'platform_admin',
                 action: 'platform_admin.access_denied',
@@ -38,14 +38,14 @@ class RequirePlatformSuperAdmin
                 return response()->json([
                     'error' => [
                         'code' => 'PLATFORM_SUPERADMIN_REQUIRED',
-                        'message' => 'Global Platform Super Admin authority is required for this endpoint.',
+                        'message' => 'Active Platform Admin or Platform Super Admin authority is required for this endpoint.',
                         'correlation_id' => $context->getCorrelationId(),
                         'retryable' => false,
                     ],
                 ], 403);
             }
 
-            abort(403, 'PLATFORM_SUPERADMIN_REQUIRED: Global Platform Super Admin authority is required.');
+            abort(403, 'PLATFORM_ADMIN_REQUIRED: Active Platform Admin or Platform Super Admin authority is required.');
         }
 
         $configService = app(PlatformConfigService::class);
