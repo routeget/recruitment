@@ -137,7 +137,7 @@ class TenantIsolationAndAuthTest extends TestCase
             $tenant->slug = 'acme-renamed';
             $tenant->save();
             $this->fail('Changing a tenant slug after creation must be rejected.');
-        } catch (\\LogicException $exception) {
+        } catch (LogicException $exception) {
             $this->assertStringContainsString('TENANT_SLUG_IMMUTABLE', $exception->getMessage());
         }
 
