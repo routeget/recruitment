@@ -159,6 +159,20 @@ class TenantIsolationAndAuthTest extends TestCase
             'slug' => 'platformadmin',
             'reason' => 'Testing reserved tenant slug validation.',
         ])->assertSessionHasErrors('slug');
+
+        $platformAdmin->forceFill([
+            'is_platform_superadmin' => false,
+            'platform_role' => 'platform_admin',
+        ])->save();
+
+        $this->actingAs($platformAdmin)->post('/platformadmin/tenants', [
+            'name' => 'Codex Hiring',
+            'slug' => 'codex-test',
+            'reason' => 'Provisioning a new tenant with an immutable career portal slug.',
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('tenants', ['slug' => 'codex-test', 'name' => 'Codex Hiring']);
+        $this->get('/codex-test')->assertOk()->assertSee('career.tringers.com/codex-test');
     }
 
 }
