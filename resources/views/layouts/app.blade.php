@@ -160,7 +160,7 @@
                         <div class="nav-section-label">Core Workspace</div>
                         <ul class="nav flex-column">
                             <li class="nav-item">
-                                <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('organization.home') }}">
+                                <a class="nav-link {{ request()->routeIs('dashboard', 'organization.home') ? 'active' : '' }}" href="{{ route('organization.home') }}">
                                     Dashboard &amp; Overview
                                 </a>
                             </li>
