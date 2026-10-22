@@ -1013,7 +1013,7 @@
             <div class="d-flex gap-2">
                 <a href="{{ route('health') }}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">JSON `/health`</a>
                 <a href="{{ route('health.ready') }}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">JSON `/health/ready`</a>
-                <a href="{{ route('system.diagnostics') }}" class="btn btn-sm btn-outline-secondary">Detailed Diagnostics</a>
+                <a href="{{ route('platform-admin.system.diagnostics') }}" class="btn btn-sm btn-outline-secondary">Detailed Diagnostics</a>
             </div>
         </div>
         <div class="table-responsive">
