@@ -59,7 +59,7 @@
                 <p class="small text-muted">
                     Per Specification §§4–5, cross-tenant support access requires a ticket reference and justification, logs an immutable security event, and prohibits routine candidate-PII browsing.
                 </p>
-                <form method="POST" action="{{ route('admin.iam.support-context') }}">
+                <form method="POST" action="{{ route('platform-admin.support-context') }}">
                     @csrf
                     <div class="mb-2">
                         <label for="target_tenant_id" class="form-label small fw-semibold">Target Tenant</label>
