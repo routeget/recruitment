@@ -85,19 +85,33 @@ class RequisitionController extends Controller
             ->with('status', "Created requisition {$req->requisition_number} in DRAFT status (Version 1).");
     }
 
-    public function update(Request $request, int $requisitionId, RequisitionService $service): RedirectResponse
+    public function update(Request $request, int $requisitionId, RequisitionService $service, TenantContextService $context): RedirectResponse
     {
         $requisition = Requisition::withoutTenantScope()->findOrFail($requisitionId);
 
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:180'],
+            'department_id' => ['nullable', 'integer'],
+            'location_id' => ['nullable', 'integer'],
+            'legal_entity_id' => ['nullable', 'integer'],
             'headcount' => ['required', 'integer', 'min:1', 'max:200'],
+            'employment_type' => ['nullable', 'in:FULL_TIME,PART_TIME,CONTRACT,INTERNSHIP'],
             'budget_reference' => ['required', 'string', 'max:80'],
             'salary_min' => ['required', 'numeric', 'min:0'],
             'salary_max' => ['required', 'numeric', 'gte:salary_min'],
             'justification' => ['required', 'string', 'min:10'],
             'change_summary' => ['nullable', 'string', 'max:255'],
         ]);
+
+        if (! empty($validated['department_id'])) {
+            $context->assertModelBelongsToActiveTenant(Department::withoutTenantScope()->findOrFail((int) $validated['department_id']), 'Department');
+        }
+        if (! empty($validated['location_id'])) {
+            $context->assertModelBelongsToActiveTenant(Location::withoutTenantScope()->findOrFail((int) $validated['location_id']), 'Location');
+        }
+        if (! empty($validated['legal_entity_id'])) {
+            $context->assertModelBelongsToActiveTenant(LegalEntity::withoutTenantScope()->findOrFail((int) $validated['legal_entity_id']), 'LegalEntity');
+        }
 
         $updated = $service->updateRequisition($requisition, $validated, Auth::user());
 

@@ -57,17 +57,18 @@ class OrganizationController extends Controller
             ->with('status', "Legal entity {$entity->code} ({$entity->name}) saved.");
     }
 
-    public function storeDepartment(Request $request, AuditService $audit): RedirectResponse
+    public function storeDepartment(Request $request, AuditService $audit, TenantContextService $context): RedirectResponse
     {
         $validated = $request->validate([
             'code' => ['required', 'string', 'max:32'],
             'name' => ['required', 'string', 'max:160'],
-            'legal_entity_id' => ['nullable', 'integer', 'exists:legal_entities,id'],
+            'legal_entity_id' => ['nullable', 'integer'],
             'cost_centre_code' => ['nullable', 'string', 'max:48'],
         ]);
 
         if (! empty($validated['legal_entity_id'])) {
-            LegalEntity::findOrFail((int) $validated['legal_entity_id']);
+            $legalEntity = LegalEntity::withoutTenantScope()->findOrFail((int) $validated['legal_entity_id']);
+            $context->assertModelBelongsToActiveTenant($legalEntity, 'LegalEntity');
         }
 
         $dept = Department::updateOrCreate(

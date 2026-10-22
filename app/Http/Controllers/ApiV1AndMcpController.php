@@ -31,6 +31,7 @@ use App\Support\ApiClientPrincipal;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -531,6 +532,28 @@ class ApiV1AndMcpController extends Controller
                     'error' => ['code' => 'INSUFFICIENT_API_SCOPE', 'message' => "API client lacks required scope '{$requiredScope}'."],
                 ], 403));
             }
+
+            $rpm = max(1, (int) ($client->rate_limit_per_minute ?? 120));
+            $rateKey = 'api_client_rpm:'.$client->id;
+            if (RateLimiter::tooManyAttempts($rateKey, $rpm)) {
+                $this->audit->record(
+                    module: 'api_platform',
+                    action: 'api_client.rate_limited',
+                    outcome: 'DENIED',
+                    errorCode: 'API_RATE_LIMIT_EXCEEDED',
+                    entityType: 'api_client',
+                    entityId: (string) $client->id,
+                    metadata: ['client_id' => $clientId, 'rate_limit_per_minute' => $rpm],
+                    tenantId: $tenantId,
+                    actorType: 'API_CLIENT',
+                    actorIdentifier: $principal->getClientId(),
+                );
+
+                abort(response()->json([
+                    'error' => ['code' => 'API_RATE_LIMIT_EXCEEDED', 'message' => "API client rate limit ({$rpm} requests/minute) exceeded."],
+                ], 429));
+            }
+            RateLimiter::hit($rateKey, 60);
 
             $client->update(['last_used_at' => now()]);
 

@@ -17,6 +17,7 @@ use App\Services\Ai\Adapters\GoogleGeminiAdapter;
 use App\Services\Ai\Adapters\OpenAiAdapter;
 use App\Services\Ai\ResumeContentAnalyzer;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
@@ -184,12 +185,15 @@ class AiGatewayService
             ['provider_key' => 'deterministic_fake', 'model_name' => 'urap-deterministic-v1', 'monthly_budget_minor' => min(100000, $globalCap)],
         ];
 
+        $existingProviders = AiProviderConfig::withoutGlobalScopes()
+            ->where('tenant_id', $tenantId)
+            ->get()
+            ->keyBy('provider_key');
+
         foreach ($providers as $p) {
             $adapter = $this->getAdapter($p['provider_key']);
-            $existing = AiProviderConfig::withoutGlobalScopes()
-                ->where('tenant_id', $tenantId)
-                ->where('provider_key', $p['provider_key'])
-                ->first();
+            /** @var AiProviderConfig|null $existing */
+            $existing = $existingProviders->get($p['provider_key']);
 
             if ($existing === null) {
                 $status = $p['provider_key'] === 'deterministic_fake'
@@ -247,42 +251,57 @@ class AiGatewayService
             }
         }
 
+        $existingRoutes = AiTaskRoute::withoutGlobalScopes()
+            ->where('tenant_id', $tenantId)
+            ->pluck('task_type')
+            ->all();
+
         foreach (self::ROUTABLE_TASKS as $taskType) {
-            AiTaskRoute::withoutGlobalScopes()->firstOrCreate(
-                ['tenant_id' => $tenantId, 'task_type' => $taskType],
-                [
-                    'uuid' => (string) Str::uuid(),
-                    'primary_provider_key' => $defaultPrimary ?: 'claude',
-                    'primary_model_name' => match ($defaultPrimary) {
-                        'gemini' => 'gemini-2.5-pro',
-                        'openai' => 'gpt-4.1',
-                        'deterministic_fake' => 'urap-deterministic-v1',
-                        default => 'claude-3-7-sonnet',
-                    },
-                    'fallback_provider_key' => 'deterministic_fake',
-                    'fallback_model_name' => 'urap-deterministic-v1',
-                    'temperature' => 0.10,
-                    'max_output_tokens' => 2000,
-                    'timeout_seconds' => 15,
-                    'max_retries' => 2,
-                    'quality_threshold' => 0.75,
-                    'require_structured_output' => true,
-                    'require_human_review' => true,
-                    'is_enabled' => true,
-                ]
-            );
+            if (! in_array($taskType, $existingRoutes, true)) {
+                AiTaskRoute::withoutGlobalScopes()->firstOrCreate(
+                    ['tenant_id' => $tenantId, 'task_type' => $taskType],
+                    [
+                        'uuid' => (string) Str::uuid(),
+                        'primary_provider_key' => $defaultPrimary ?: 'claude',
+                        'primary_model_name' => match ($defaultPrimary) {
+                            'gemini' => 'gemini-2.5-pro',
+                            'openai' => 'gpt-4.1',
+                            'deterministic_fake' => 'urap-deterministic-v1',
+                            default => 'claude-3-7-sonnet',
+                        },
+                        'fallback_provider_key' => 'deterministic_fake',
+                        'fallback_model_name' => 'urap-deterministic-v1',
+                        'temperature' => 0.10,
+                        'max_output_tokens' => 2000,
+                        'timeout_seconds' => 15,
+                        'max_retries' => 2,
+                        'quality_threshold' => 0.75,
+                        'require_structured_output' => true,
+                        'require_human_review' => true,
+                        'is_enabled' => true,
+                    ]
+                );
+            }
         }
 
+        $existingPrompts = AiPromptVersion::withoutGlobalScopes()
+            ->where('tenant_id', $tenantId)
+            ->where('version', 1)
+            ->pluck('task_type')
+            ->all();
+
         foreach (self::ALLOWED_TASKS as $taskType => $meta) {
-            AiPromptVersion::withoutGlobalScopes()->firstOrCreate(
-                ['tenant_id' => $tenantId, 'task_type' => $taskType, 'version' => 1],
-                [
-                    'uuid' => (string) Str::uuid(),
-                    'system_prompt' => "You are a governed recruitment AI assistant performing {$meta['title']}. Cite only verifiable job-relevant evidence from the document. Missing information must remain null or empty. Never invent qualifications, dates, employers, or skills. Never infer protected characteristics or make autonomous hiring/HR decisions.",
-                    'output_schema' => ['required' => $meta['required_keys']],
-                    'is_active' => true,
-                ]
-            );
+            if (! in_array($taskType, $existingPrompts, true)) {
+                AiPromptVersion::withoutGlobalScopes()->firstOrCreate(
+                    ['tenant_id' => $tenantId, 'task_type' => $taskType, 'version' => 1],
+                    [
+                        'uuid' => (string) Str::uuid(),
+                        'system_prompt' => "You are a governed recruitment AI assistant performing {$meta['title']}. Cite only verifiable job-relevant evidence from the document. Missing information must remain null or empty. Never invent qualifications, dates, employers, or skills. Never infer protected characteristics or make autonomous hiring/HR decisions.",
+                        'output_schema' => ['required' => $meta['required_keys']],
+                        'is_active' => true,
+                    ]
+                );
+            }
         }
     }
 
@@ -428,6 +447,25 @@ class AiGatewayService
 
             throw new RuntimeException('AI provider invocation blocked: tenant kill switch is engaged (AI_KILL_SWITCH_ENGAGED).', 409);
         }
+
+        $providerRpm = max(1, (int) ($providerConfig->rate_limit_rpm ?? 60));
+        $providerRateKey = 'ai_provider_rpm:'.$tenantId.':'.$providerConfig->provider_key;
+        if (RateLimiter::tooManyAttempts($providerRateKey, $providerRpm)) {
+            $this->auditService->record(
+                module: 'ai_gateway',
+                action: 'ai.provider_rate_limited',
+                outcome: 'DENIED',
+                errorCode: 'PROVIDER_RATE_LIMITED',
+                entityType: 'ai_provider_config',
+                entityId: (string) $providerConfig->id,
+                metadata: ['provider_key' => $resolvedProviderKey, 'rate_limit_rpm' => $providerRpm],
+                tenantId: $tenantId,
+                actorUserId: $actor ? (int) $actor->id : null,
+            );
+
+            throw new RuntimeException("PROVIDER_RATE_LIMITED: AI provider '{$resolvedProviderKey}' exceeded configured rate limit ({$providerRpm} RPM).", 429);
+        }
+        RateLimiter::hit($providerRateKey, 60);
 
         $estimatedCostMinor = 25; // $0.25 per structured call
         $globalCap = $this->config()->getInt('ai.global_monthly_budget_cap_minor');
@@ -884,14 +922,19 @@ class AiGatewayService
                 : $fbAdapter->getSupportedModels()[0];
         }
 
+        $rawQuality = (float) ($data['quality_threshold'] ?? $route->quality_threshold ?? 0.75);
+        $normalizedQuality = $rawQuality > 1.0 ? ($rawQuality / 100.0) : $rawQuality;
+
         $route->update([
             'primary_provider_key' => $primaryProvider,
             'primary_model_name' => $primaryModel,
             'fallback_provider_key' => $fallbackProvider,
             'fallback_model_name' => $fallbackModel,
+            'temperature' => max(0.0, min(1.0, (float) ($data['temperature'] ?? $route->temperature ?? 0.10))),
+            'max_output_tokens' => max(256, min(16000, (int) ($data['max_output_tokens'] ?? $route->max_output_tokens ?? 2000))),
             'timeout_seconds' => max(3, min(120, (int) ($data['timeout_seconds'] ?? $route->timeout_seconds))),
             'max_retries' => max(0, min(5, (int) ($data['max_retries'] ?? $route->max_retries))),
-            'quality_threshold' => max(0.0, min(1.0, (float) ($data['quality_threshold'] ?? $route->quality_threshold))),
+            'quality_threshold' => max(0.0, min(1.0, $normalizedQuality)),
             'require_structured_output' => (bool) ($data['require_structured_output'] ?? true),
             'require_human_review' => (bool) ($data['require_human_review'] ?? true),
             'is_enabled' => (bool) ($data['is_enabled'] ?? true),

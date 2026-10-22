@@ -11,15 +11,12 @@ use App\Models\Requisition;
 use App\Models\Tenant;
 use App\Models\User;
 use Database\Seeders\AlphaSafeBootstrapSeeder;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class SystemWideProductionUxRemediationTest extends TestCase
 {
-    use RefreshDatabase;
-
     protected Tenant $tenantA;
 
     protected User $adminA;

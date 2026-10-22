@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Models\Tenant;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookSubscription;
 use App\Services\AuditService;
 use App\Services\PlatformConfigService;
+use App\Services\TenantContextService;
 use App\Support\WebhookSsrfGuard;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -26,6 +28,11 @@ class DeliverSignedWebhookJob implements ShouldQueue
 
     public int $timeout = 10;
 
+    /**
+     * @var array<int, int>
+     */
+    public array $backoff = [5, 30, 120];
+
     public function __construct(
         public readonly int $webhookDeliveryId,
     ) {}
@@ -35,6 +42,19 @@ class DeliverSignedWebhookJob implements ShouldQueue
         /** @var WebhookDelivery|null $delivery */
         $delivery = WebhookDelivery::withoutGlobalScopes()->find($this->webhookDeliveryId);
         if ($delivery === null || $delivery->status === 'DELIVERED') {
+            return;
+        }
+
+        app(TenantContextService::class)->setActiveTenantId((int) $delivery->tenant_id);
+
+        $tenant = Tenant::withoutGlobalScopes()->find($delivery->tenant_id);
+        if ($tenant === null || $tenant->status !== 'ACTIVE') {
+            $delivery->update([
+                'status' => 'PAUSED_BY_TENANT_STATUS',
+                'error_code' => 'TENANT_SUSPENDED',
+                'error_message' => 'Outbound webhook dispatch is blocked because the tenant is not active.',
+            ]);
+
             return;
         }
 

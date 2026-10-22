@@ -445,6 +445,7 @@ class CareerPortalController extends Controller
             }
         }
 
+        $request->session()->put("candidate_authorized_applications.{$application->uuid}", now()->addHours(24)->timestamp);
         session()->flash('recent_application_uuid', $application->uuid);
 
         return redirect()->route('careers.show', ['tenantSlug' => $tenant->slug, 'jobSlug' => $job->slug])
@@ -454,7 +455,7 @@ class CareerPortalController extends Controller
     /**
      * Candidate-facing resume extraction review & correction view.
      */
-    public function showCandidateResumeReview(string $tenantSlug, string $applicationUuid): View
+    public function showCandidateResumeReview(Request $request, string $tenantSlug, string $applicationUuid): View
     {
         $tenant = Tenant::where('slug', $tenantSlug)->where('status', 'ACTIVE')->firstOrFail();
 
@@ -463,6 +464,8 @@ class CareerPortalController extends Controller
             ->where('tenant_id', $tenant->id)
             ->where('uuid', $applicationUuid)
             ->firstOrFail();
+
+        $this->assertCandidateApplicationAccess($request, $application);
 
         $parseJob = ResumeParseJob::withoutTenantScope()
             ->where('tenant_id', $tenant->id)
@@ -500,6 +503,8 @@ class CareerPortalController extends Controller
             ->where('tenant_id', $tenant->id)
             ->where('uuid', $applicationUuid)
             ->firstOrFail();
+
+        $this->assertCandidateApplicationAccess($request, $application);
 
         $parseJob = ResumeParseJob::withoutTenantScope()
             ->where('tenant_id', $tenant->id)
@@ -542,6 +547,7 @@ class CareerPortalController extends Controller
      * Candidate triggers resume re-processing for their application.
      */
     public function reprocessCandidateResume(
+        Request $request,
         string $tenantSlug,
         string $applicationUuid,
         ResumeParsingService $resumeParsing,
@@ -553,6 +559,8 @@ class CareerPortalController extends Controller
             ->where('tenant_id', $tenant->id)
             ->where('uuid', $applicationUuid)
             ->firstOrFail();
+
+        $this->assertCandidateApplicationAccess($request, $application);
 
         $doc = CandidateDocument::withoutTenantScope()
             ->where('tenant_id', $tenant->id)
@@ -574,6 +582,43 @@ class CareerPortalController extends Controller
         return redirect()
             ->route('careers.application.resume-review', ['tenantSlug' => $tenant->slug, 'applicationUuid' => $application->uuid])
             ->with('status', "Resume re-processed cleanly (Status: {$parseJob->status}).");
+    }
+
+    private function assertCandidateApplicationAccess(Request $request, Application $application): void
+    {
+        $sessionExpiry = (int) $request->session()->get("candidate_authorized_applications.{$application->uuid}", 0);
+        if ($sessionExpiry >= now()->timestamp) {
+            return;
+        }
+
+        if ($request->session()->get('recent_application_uuid') === $application->uuid) {
+            return;
+        }
+
+        if ($request->hasValidSignature()) {
+            $request->session()->put("candidate_authorized_applications.{$application->uuid}", now()->addHours(24)->timestamp);
+
+            return;
+        }
+
+        /** @var User|null $user */
+        $user = Auth::user();
+        if ($user && $user->hasPermission('candidates.view', (int) $application->tenant_id)) {
+            return;
+        }
+
+        $this->audit->record(
+            module: 'career_portal',
+            action: 'career_portal.application_resume_review_denied',
+            outcome: 'DENIED',
+            errorCode: 'CANDIDATE_APPLICATION_ACCESS_DENIED',
+            entityType: 'Application',
+            entityId: (string) $application->id,
+            tenantId: (int) $application->tenant_id,
+            actorUserId: $user?->id,
+        );
+
+        abort(403, 'CANDIDATE_APPLICATION_ACCESS_DENIED: You are not authorized to view or modify this candidate application resume review.');
     }
 
     public function legalPage(string $page): View

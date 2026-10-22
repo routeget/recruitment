@@ -10,14 +10,11 @@ use App\Models\CareerPortalPublicationEvent;
 use App\Models\Tenant;
 use App\Models\User;
 use Database\Seeders\AlphaSafeBootstrapSeeder;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use LogicException;
 use Tests\TestCase;
 
 class TringersCareerPortalAndConfigTest extends TestCase
 {
-    use RefreshDatabase;
-
     protected function setUp(): void
     {
         parent::setUp();

@@ -306,7 +306,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/system/diagnostics', [HealthController::class, 'diagnosticsPage'])->name('system.diagnostics');
         Route::get('/section/{section}', [PlatformAdminController::class, 'index'])->name('section');
         Route::post('/settings/{section}', [PlatformAdminController::class, 'updateSection'])->name('settings.update');
-        Route::post('/support-context', [AuditGovernanceController::class, 'grantPlatformSupportContext'])->name('support-context');
+        Route::post('/support-context', [AuditGovernanceController::class, 'grantPlatformSupportContext'])
+            ->middleware('platform.superadmin')
+            ->name('support-context');
         Route::post('/tenants', [PlatformAdminController::class, 'storeTenant'])->name('tenants.store');
         Route::post('/tenants/{tenant}/lifecycle', [PlatformAdminController::class, 'updateTenantLifecycle'])->name('tenants.lifecycle');
         Route::post('/admins/promote', [PlatformAdminController::class, 'promoteAdmin'])->name('admins.promote');
@@ -323,18 +325,22 @@ Route::get('/{tenantSlug}/jobs/{jobSlug}', [CareerPortalController::class, 'show
     ->name('careers.show');
 Route::post('/{tenantSlug}/jobs/{jobSlug}/extract-resume', [CareerPortalController::class, 'extractResumeForApplication'])
     ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+    ->middleware('throttle:30,1')
     ->name('careers.extract-resume');
 Route::post('/{tenantSlug}/jobs/{jobSlug}/apply', [CareerPortalController::class, 'submitPublicApplication'])
     ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+    ->middleware('throttle:30,1')
     ->name('careers.apply');
 Route::get('/{tenantSlug}/applications/{applicationUuid}/resume-review', [CareerPortalController::class, 'showCandidateResumeReview'])
     ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
     ->name('careers.application.resume-review');
 Route::post('/{tenantSlug}/applications/{applicationUuid}/resume-review', [CareerPortalController::class, 'submitCandidateResumeReview'])
     ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+    ->middleware('throttle:30,1')
     ->name('careers.application.resume-review.submit');
 Route::post('/{tenantSlug}/applications/{applicationUuid}/resume-reprocess', [CareerPortalController::class, 'reprocessCandidateResume'])
     ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+    ->middleware('throttle:30,1')
     ->name('careers.application.resume-reprocess');
 Route::get('/{tenantSlug}', [CareerPortalController::class, 'tenantIndex'])
     ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')

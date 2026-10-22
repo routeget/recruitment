@@ -49,9 +49,9 @@ class ResumeParsingService
             ]);
         }
 
-        if (! $candidate->consent_given) {
+        if (! $candidate->consent_given || in_array((string) $candidate->dsar_status, ['DELETION_REQUESTED', 'ANONYMIZED'], true)) {
             throw ValidationException::withMessages([
-                'consent_given' => ['CONSENT_REQUIRED: Active candidate privacy consent is required before AI resume processing.'],
+                'consent_given' => ['CONSENT_REQUIRED: Active candidate privacy consent is required and DSAR deletion must not be active before AI resume processing.'],
             ]);
         }
 
@@ -301,6 +301,22 @@ class ResumeParsingService
             $finalStatus,
             $actor
         ): ResumeParseJob {
+            $priorReviewedJob = ResumeParseJob::withoutGlobalScopes()
+                ->where('tenant_id', $candidate->tenant_id)
+                ->where('candidate_id', $candidate->id)
+                ->where('id', '!=', $parseJob->id)
+                ->whereNotNull('corrected_data')
+                ->latest('id')
+                ->first();
+
+            $preservedCorrections = ! empty($parseJob->corrected_data)
+                ? $parseJob->corrected_data
+                : ($priorReviewedJob?->corrected_data ?? (
+                    is_array($candidate->parsed_resume_data) && ! empty($candidate->parsed_resume_data['human_reviewed'])
+                        ? $candidate->parsed_resume_data
+                        : null
+                ));
+
             $parseJob->update([
                 'ai_task_run_id' => $taskRun->id,
                 'provider_key' => $taskRun->provider_key,
@@ -314,6 +330,10 @@ class ResumeParsingService
                 'security_flags' => $injection['flags'],
                 'extracted_text_length' => strlen($injection['clean_text']),
                 'parsed_data' => $structured,
+                'corrected_data' => $preservedCorrections,
+                'candidate_reviewed' => $parseJob->candidate_reviewed || (bool) ($priorReviewedJob?->candidate_reviewed),
+                'reviewed_by_user_id' => $parseJob->reviewed_by_user_id ?? $priorReviewedJob?->reviewed_by_user_id,
+                'reviewed_at' => $parseJob->reviewed_at ?? $priorReviewedJob?->reviewed_at,
                 'missing_fields' => $structured['missing_fields'] ?? [],
                 'validation_errors' => [],
                 'error_code' => null,
@@ -321,7 +341,7 @@ class ResumeParsingService
                 'completed_at' => now(),
             ]);
 
-            $this->syncParsedDataToCandidateProfile($candidate, $structured, $finalStatus);
+            $this->syncParsedDataToCandidateProfile($candidate, $structured, $finalStatus, $preservedCorrections);
 
             $this->auditService->record(
                 module: 'resume_parsing',
@@ -459,32 +479,41 @@ class ResumeParsingService
     }
 
     /**
-     * Safely populate Candidate profile with extracted fields without overwriting existing valid fields with null.
+     * Safely populate Candidate profile with extracted fields without overwriting existing valid fields with null
+     * or overwriting human-reviewed corrections.
      *
      * @param  array<string, mixed>  $structured
+     * @param  array<string, mixed>|null  $preservedCorrections
      */
-    private function syncParsedDataToCandidateProfile(Candidate $candidate, array $structured, string $status): void
-    {
+    private function syncParsedDataToCandidateProfile(
+        Candidate $candidate,
+        array $structured,
+        string $status,
+        ?array $preservedCorrections = null
+    ): void {
+        $hasHumanReview = ! empty($preservedCorrections);
+        $effectiveData = $hasHumanReview ? array_merge($structured, $preservedCorrections) : $structured;
+
         $updates = [
-            'parsed_resume_data' => $structured,
+            'parsed_resume_data' => $effectiveData,
             'resume_parse_status' => $status,
             'resume_parsed_at' => now(),
             'resume_schema_version' => ResumeParseJob::SCHEMA_VERSION,
         ];
 
-        if (! empty($structured['professional_summary'])) {
+        if (! $hasHumanReview && ! empty($structured['professional_summary'])) {
             $updates['professional_summary'] = $structured['professional_summary'];
         }
-        if (! empty($structured['current_title'])) {
+        if (! $hasHumanReview && ! empty($structured['current_title'])) {
             $updates['current_title'] = $structured['current_title'];
         }
-        if (isset($structured['years_experience']) && is_int($structured['years_experience'])) {
+        if (! $hasHumanReview && isset($structured['years_experience']) && is_int($structured['years_experience'])) {
             $updates['years_experience'] = $structured['years_experience'];
         }
-        if (! empty($structured['skills']) && is_array($structured['skills'])) {
+        if (! empty($effectiveData['skills']) && is_array($effectiveData['skills'])) {
             $mergedSkills = array_values(array_unique(array_filter(array_merge(
                 is_array($candidate->skills) ? $candidate->skills : [],
-                $structured['skills']
+                $effectiveData['skills']
             ))));
             $updates['skills'] = $mergedSkills;
         }
@@ -494,13 +523,13 @@ class ResumeParsingService
         if (! empty($structured['education'])) {
             $updates['education'] = $structured['education'];
         }
-        if (! empty($structured['certifications'])) {
+        if (! $hasHumanReview && ! empty($structured['certifications'])) {
             $updates['certifications'] = $structured['certifications'];
         }
         if (! empty($structured['projects'])) {
             $updates['projects'] = $structured['projects'];
         }
-        if (! empty($structured['languages'])) {
+        if (! $hasHumanReview && ! empty($structured['languages'])) {
             $updates['languages'] = $structured['languages'];
         }
         if (! empty($structured['professional_links'])) {
@@ -564,7 +593,7 @@ class ResumeParsingService
             throw new RuntimeException('TENANT_SCOPE_VIOLATION: Cross-tenant review blocked.', 403);
         }
 
-        if (! $candidate->consent_given) {
+        if (! $candidate->consent_given || in_array((string) $candidate->dsar_status, ['DELETION_REQUESTED', 'ANONYMIZED'], true)) {
             throw ValidationException::withMessages([
                 'consent_given' => ['CONSENT_REQUIRED: Candidate privacy consent must be active before saving reviewed profile data.'],
             ]);
@@ -587,10 +616,33 @@ class ResumeParsingService
             ? (int) $corrections['years_experience']
             : ($baseline['years_experience'] ?? $candidate->years_experience);
 
+        $resolvedEmail = isset($corrections['email']) && filter_var(trim((string) $corrections['email']), FILTER_VALIDATE_EMAIL)
+            ? strtolower(trim((string) $corrections['email']))
+            : $candidate->email;
+        $resolvedCountryCode = isset($corrections['country_code']) && strlen(trim((string) $corrections['country_code'])) === 2
+            ? strtoupper(trim((string) $corrections['country_code']))
+            : $candidate->country_code;
+        $resolvedLocationCity = isset($corrections['location_city']) && trim((string) $corrections['location_city']) !== ''
+            ? trim((string) $corrections['location_city'])
+            : $candidate->location_city;
+        $resolvedPhone = isset($corrections['phone']) && trim((string) $corrections['phone']) !== ''
+            ? trim((string) $corrections['phone'])
+            : $candidate->phone;
+
         $correctedPayload = array_merge($baseline, [
             'first_name' => trim((string) ($corrections['first_name'] ?? $candidate->first_name)),
             'last_name' => trim((string) ($corrections['last_name'] ?? $candidate->last_name)),
             'full_name' => trim(trim((string) ($corrections['first_name'] ?? $candidate->first_name)).' '.trim((string) ($corrections['last_name'] ?? $candidate->last_name))),
+            'email' => $resolvedEmail,
+            'phone' => $resolvedPhone,
+            'location' => $resolvedLocationCity,
+            'country_code' => $resolvedCountryCode,
+            'contact' => array_merge(is_array($baseline['contact'] ?? null) ? $baseline['contact'] : [], [
+                'email' => $resolvedEmail,
+                'phone' => $resolvedPhone,
+                'location_city' => $resolvedLocationCity,
+                'country_code' => $resolvedCountryCode,
+            ]),
             'current_title' => isset($corrections['current_title']) && trim((string) $corrections['current_title']) !== ''
                 ? trim((string) $corrections['current_title'])
                 : ($baseline['current_title'] ?? $candidate->current_title),
@@ -606,7 +658,17 @@ class ResumeParsingService
             'reviewed_at' => now()->toIso8601String(),
         ]);
 
-        return DB::transaction(function () use ($parseJob, $candidate, $corrections, $correctedPayload, $reviewer, $isCandidateReview): ResumeParseJob {
+        return DB::transaction(function () use (
+            $parseJob,
+            $candidate,
+            $correctedPayload,
+            $resolvedEmail,
+            $resolvedPhone,
+            $resolvedLocationCity,
+            $resolvedCountryCode,
+            $reviewer,
+            $isCandidateReview
+        ): ResumeParseJob {
             $parseJob->update([
                 'status' => ResumeParseJob::STATUS_COMPLETED,
                 'corrected_data' => $correctedPayload,
@@ -622,11 +684,20 @@ class ResumeParsingService
                 }
             }
 
+            $emailCanUpdate = $resolvedEmail === $candidate->email
+                || ! Candidate::withoutGlobalScopes()
+                    ->where('tenant_id', $candidate->tenant_id)
+                    ->where('email', $resolvedEmail)
+                    ->where('id', '!=', $candidate->id)
+                    ->exists();
+
             $candidate->update([
                 'first_name' => $correctedPayload['first_name'] ?: $candidate->first_name,
                 'last_name' => $correctedPayload['last_name'] ?: $candidate->last_name,
-                'phone' => isset($corrections['phone']) && trim((string) $corrections['phone']) !== '' ? trim((string) $corrections['phone']) : $candidate->phone,
-                'location_city' => isset($corrections['location_city']) && trim((string) $corrections['location_city']) !== '' ? trim((string) $corrections['location_city']) : $candidate->location_city,
+                'email' => $emailCanUpdate ? $resolvedEmail : $candidate->email,
+                'phone' => $resolvedPhone,
+                'location_city' => $resolvedLocationCity,
+                'country_code' => $resolvedCountryCode,
                 'current_title' => $correctedPayload['current_title'],
                 'years_experience' => (int) ($correctedPayload['years_experience'] ?? 0),
                 'professional_summary' => $correctedPayload['professional_summary'],
@@ -677,6 +748,12 @@ class ResumeParsingService
 
         if ($candidate === null || $job === null || (int) $application->tenant_id !== (int) $candidate->tenant_id || (int) $application->tenant_id !== (int) $job->tenant_id) {
             throw new RuntimeException('TENANT_SCOPE_VIOLATION: Application, candidate, and job posting must belong to the same tenant.', 403);
+        }
+
+        if (! $candidate->consent_given || in_array((string) $candidate->dsar_status, ['DELETION_REQUESTED', 'ANONYMIZED'], true)) {
+            throw ValidationException::withMessages([
+                'consent_given' => ['CONSENT_REQUIRED: Active candidate privacy consent is required before AI candidate-to-job matching.'],
+            ]);
         }
 
         $resumeData = $candidate->latestResumeParseJob?->getEffectiveResumeData()

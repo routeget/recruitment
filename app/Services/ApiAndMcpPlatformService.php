@@ -394,12 +394,14 @@ class ApiAndMcpPlatformService
             'hr_validation.status' => [
                 'cases' => HrValidationCase::withoutGlobalScopes()
                     ->where('tenant_id', $tenantId)
+                    ->latest('id')
+                    ->limit(25)
                     ->get(['id', 'application_id', 'status', 'checklist_version', 'invalidated_at'])
                     ->toArray(),
             ],
             default => [
                 'requisitions_count' => Requisition::withoutGlobalScopes()->where('tenant_id', $tenantId)->count(),
-                'published_jobs_count' => JobPosting::withoutGlobalScopes()->where('tenant_id', $tenantId)->where('status', 'PUBLISHED_PUBLIC')->count(),
+                'published_jobs_count' => JobPosting::withoutGlobalScopes()->where('tenant_id', $tenantId)->where('status', JobPosting::STATUS_PUBLISHED)->count(),
                 'candidates_count' => Candidate::withoutGlobalScopes()->where('tenant_id', $tenantId)->count(),
                 'applications_count' => Application::withoutGlobalScopes()->where('tenant_id', $tenantId)->count(),
             ],

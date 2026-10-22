@@ -7,19 +7,24 @@ namespace App\Services;
 use App\Exceptions\HrHandoverGateNotSatisfiedException;
 use App\Models\Application;
 use App\Models\ApplicationStageEvent;
+use App\Models\Department;
 use App\Models\ExternalEmployeeReference;
 use App\Models\HrHandover;
 use App\Models\HrHandoverApproval;
 use App\Models\HrValidationCase;
+use App\Models\LegalEntity;
+use App\Models\Location;
 use App\Models\Offer;
 use App\Models\OfferTemplate;
 use App\Models\OfferVersion;
+use App\Models\Requisition;
 use App\Models\TransactionalOutboxEvent;
 use App\Models\User;
 use App\Support\ApiClientPrincipal;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class OfferAndHrHandoverService
 {
@@ -721,12 +726,20 @@ class OfferAndHrHandoverService
                 'status' => 'handed_over',
             ]);
 
-            $application = Application::query()->whereKey($lockedCase->application_id)->lockForUpdate()->firstOrFail();
+            $application = Application::query()->with('jobPosting')->whereKey($lockedCase->application_id)->lockForUpdate()->firstOrFail();
             $fromStage = $application->current_stage;
             $application->update([
                 'current_stage' => 'handed_over',
                 'status' => 'HIRED',
+                'candidate_visible_status' => 'Hired',
             ]);
+
+            if ($fromStage !== 'handed_over' && $application->jobPosting?->requisition_id) {
+                Requisition::withoutGlobalScopes()
+                    ->where('tenant_id', $tenantId)
+                    ->whereKey($application->jobPosting->requisition_id)
+                    ->increment('filled_headcount');
+            }
 
             ApplicationStageEvent::query()->create([
                 'tenant_id' => $tenantId,
@@ -799,7 +812,7 @@ class OfferAndHrHandoverService
             /** @var HrValidationCase $validationCase */
             $validationCase = HrValidationCase::query()->whereKey($lockedHandover->hr_validation_case_id)->lockForUpdate()->firstOrFail();
             /** @var Application $application */
-            $application = Application::query()->whereKey($validationCase->application_id)->lockForUpdate()->firstOrFail();
+            $application = Application::query()->with('jobPosting')->whereKey($validationCase->application_id)->lockForUpdate()->firstOrFail();
 
             if ($foundInExternalSystem) {
                 $externalEmployeeId = 'DYN-EMP-'.strtoupper(substr(hash('sha256', $lockedHandover->idempotency_key), 0, 10));
@@ -819,10 +832,19 @@ class OfferAndHrHandoverService
                     'status' => 'handed_over',
                 ]);
 
+                $fromStage = $application->current_stage;
                 $application->update([
                     'current_stage' => 'handed_over',
                     'status' => 'HIRED',
+                    'candidate_visible_status' => 'Hired',
                 ]);
+
+                if ($fromStage !== 'handed_over' && $application->jobPosting?->requisition_id) {
+                    Requisition::withoutGlobalScopes()
+                        ->where('tenant_id', $tenantId)
+                        ->whereKey($application->jobPosting->requisition_id)
+                        ->increment('filled_headcount');
+                }
 
                 ExternalEmployeeReference::query()->updateOrCreate(
                     [
@@ -890,13 +912,30 @@ class OfferAndHrHandoverService
      */
     private function createOfferVersionRecord(Offer $offer, int $versionNumber, array $data, User $actor): OfferVersion
     {
+        $tenantId = (int) $offer->tenant_id;
+        $legalEntityId = isset($data['legal_entity_id']) && $data['legal_entity_id'] !== '' ? (int) $data['legal_entity_id'] : null;
+        $departmentId = isset($data['department_id']) && $data['department_id'] !== '' ? (int) $data['department_id'] : null;
+        $locationId = isset($data['location_id']) && $data['location_id'] !== '' ? (int) $data['location_id'] : null;
+
+        if ($legalEntityId !== null && ! LegalEntity::withoutGlobalScopes()->where('tenant_id', $tenantId)->whereKey($legalEntityId)->exists()) {
+            throw new AccessDeniedHttpException('TENANT_ISOLATION_VIOLATION: LegalEntity does not belong to the active tenant.');
+        }
+
+        if ($departmentId !== null && ! Department::withoutGlobalScopes()->where('tenant_id', $tenantId)->whereKey($departmentId)->exists()) {
+            throw new AccessDeniedHttpException('TENANT_ISOLATION_VIOLATION: Department does not belong to the active tenant.');
+        }
+
+        if ($locationId !== null && ! Location::withoutGlobalScopes()->where('tenant_id', $tenantId)->whereKey($locationId)->exists()) {
+            throw new AccessDeniedHttpException('TENANT_ISOLATION_VIOLATION: Location does not belong to the active tenant.');
+        }
+
         $canonicalTerms = [
             'offer_id' => (int) $offer->id,
             'version_number' => $versionNumber,
             'job_title' => trim((string) $data['job_title']),
-            'legal_entity_id' => isset($data['legal_entity_id']) ? (int) $data['legal_entity_id'] : null,
-            'department_id' => isset($data['department_id']) ? (int) $data['department_id'] : null,
-            'location_id' => isset($data['location_id']) ? (int) $data['location_id'] : null,
+            'legal_entity_id' => $legalEntityId,
+            'department_id' => $departmentId,
+            'location_id' => $locationId,
             'employment_type' => $data['employment_type'] ?? 'full_time',
             'base_salary_minor' => (int) $data['base_salary_minor'],
             'currency_code' => strtoupper((string) ($data['currency_code'] ?? 'USD')),

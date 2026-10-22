@@ -7,6 +7,7 @@ use App\Models\ApplicationStageEvent;
 use App\Models\Candidate;
 use App\Models\CandidateDocument;
 use App\Models\JobPosting;
+use App\Models\ResumeParseJob;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
@@ -495,11 +496,60 @@ class CandidateAndApplicationService
             $consentGiven = isset($data['consent_given']) ? (bool) $data['consent_given'] : (bool) $locked->consent_given;
             $dsarStatus = (string) ($data['dsar_status'] ?? $locked->dsar_status ?? 'NONE');
 
-            $locked->update([
-                'consent_given' => $consentGiven,
-                'consent_given_at' => $consentGiven ? ($locked->consent_given_at ?? now()) : $locked->consent_given_at,
-                'dsar_status' => $dsarStatus,
-            ]);
+            if ($dsarStatus === 'ANONYMIZED') {
+                $consentGiven = false;
+                $documents = CandidateDocument::withoutTenantScope()
+                    ->where('tenant_id', $locked->tenant_id)
+                    ->where('candidate_id', $locked->id)
+                    ->get();
+
+                foreach ($documents as $doc) {
+                    if ($doc->storage_disk && $doc->storage_path) {
+                        Storage::disk($doc->storage_disk)->delete($doc->storage_path);
+                    }
+                }
+
+                ResumeParseJob::withoutGlobalScopes()
+                    ->where('tenant_id', $locked->tenant_id)
+                    ->where('candidate_id', $locked->id)
+                    ->update([
+                        'parsed_data' => null,
+                        'corrected_data' => null,
+                        'error_message' => 'Candidate data anonymized per DSAR request.',
+                    ]);
+
+                CandidateDocument::withoutTenantScope()
+                    ->where('tenant_id', $locked->tenant_id)
+                    ->where('candidate_id', $locked->id)
+                    ->delete();
+
+                $locked->update([
+                    'first_name' => 'Anonymized',
+                    'last_name' => 'Candidate',
+                    'email' => 'anonymized-'.$locked->id.'@redacted.invalid',
+                    'phone' => null,
+                    'location_city' => null,
+                    'current_title' => null,
+                    'professional_summary' => null,
+                    'parsed_resume_data' => null,
+                    'skills' => [],
+                    'work_experience' => [],
+                    'education' => [],
+                    'certifications' => [],
+                    'projects' => [],
+                    'languages' => [],
+                    'professional_links' => [],
+                    'consent_given' => false,
+                    'consent_given_at' => null,
+                    'dsar_status' => 'ANONYMIZED',
+                ]);
+            } else {
+                $locked->update([
+                    'consent_given' => $consentGiven,
+                    'consent_given_at' => $consentGiven ? ($locked->consent_given_at ?? now()) : null,
+                    'dsar_status' => $dsarStatus,
+                ]);
+            }
 
             $this->audit->record(
                 module: 'candidates',
@@ -511,12 +561,13 @@ class CandidateAndApplicationService
                     'candidate_code' => $locked->candidate_code,
                     'consent_given' => $locked->consent_given,
                     'dsar_status' => $locked->dsar_status,
+                    'anonymized' => $dsarStatus === 'ANONYMIZED',
                 ],
                 tenantId: (int) $locked->tenant_id,
                 actorUserId: (int) $actor->id,
             );
 
-            return $locked;
+            return $locked->fresh();
         });
     }
 }

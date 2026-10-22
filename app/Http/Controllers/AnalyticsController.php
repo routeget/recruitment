@@ -31,11 +31,20 @@ class AnalyticsController extends Controller
             ->pluck('total', 'status')
             ->all();
 
+        $blockedCaseIds = Schema::hasTable('hr_validation_cases')
+            ? DB::table('hr_validation_cases')
+                ->where('tenant_id', $tenantId)
+                ->whereIn('status', ['not_started', 'in_validation', 'pending_fixes'])
+                ->pluck('id')
+                ->all()
+            : [];
+        $blockedCases = count($blockedCaseIds);
         $blockedHandovers = Schema::hasTable('hr_handovers')
-            ? DB::table('hr_handovers')->where('tenant_id', $tenantId)->whereIn('status', ['BLOCKED', 'blocked_pending_validation', 'failed_retryable'])->count()
-            : 0;
-        $blockedCases = Schema::hasTable('hr_validation_cases')
-            ? DB::table('hr_validation_cases')->where('tenant_id', $tenantId)->whereIn('status', ['not_started', 'in_validation', 'pending_fixes'])->count()
+            ? DB::table('hr_handovers')
+                ->where('tenant_id', $tenantId)
+                ->whereIn('status', ['BLOCKED', 'blocked_pending_validation', 'failed_retryable', 'ambiguous_timeout'])
+                ->when(! empty($blockedCaseIds), fn ($q) => $q->whereNotIn('hr_validation_case_id', $blockedCaseIds))
+                ->count()
             : 0;
 
         $offersSummary = [

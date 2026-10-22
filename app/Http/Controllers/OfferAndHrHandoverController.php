@@ -130,8 +130,15 @@ class OfferAndHrHandoverController extends Controller
         $validated = $request->validate([
             'job_title' => ['nullable', 'string', 'max:200'],
             'legal_entity_id' => ['nullable', 'integer'],
+            'department_id' => ['nullable', 'integer'],
+            'location_id' => ['nullable', 'integer'],
+            'employment_type' => ['nullable', 'string', 'max:40'],
             'base_salary_minor' => ['nullable', 'integer', 'min:100'],
+            'currency_code' => ['nullable', 'string', 'size:3'],
+            'bonus_terms' => ['nullable', 'string', 'max:1000'],
+            'equity_terms' => ['nullable', 'string', 'max:1000'],
             'start_date' => ['nullable', 'date'],
+            'probation_months' => ['nullable', 'integer', 'min:0', 'max:24'],
         ]);
 
         $newVersion = $this->service->reviseOfferMaterialTerms(

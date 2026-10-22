@@ -239,17 +239,27 @@ class User extends Authenticatable
             ->get();
 
         $permissions = [];
+        $prohibitCandidatePii = false;
         foreach ($memberships as $membership) {
             $abac = is_array($membership->abac_scope) ? $membership->abac_scope : [];
-            $prohibitCandidatePii = ! empty($abac['candidate_pii_browsing_prohibited']);
+            if (! empty($abac['candidate_pii_browsing_prohibited'])) {
+                $prohibitCandidatePii = true;
+            }
             if ($membership->role) {
                 foreach ($membership->role->permissions as $perm) {
-                    if ($prohibitCandidatePii && in_array($perm->slug, ['candidates.view', 'candidates.manage', 'applications.manage'], true)) {
-                        continue;
-                    }
                     $permissions[] = $perm->slug;
                 }
             }
+        }
+
+        if ($prohibitCandidatePii) {
+            $permissions = array_diff($permissions, [
+                'candidates.view',
+                'candidates.manage',
+                'applications.manage',
+                'offers.manage',
+                'hr_validation.manage',
+            ]);
         }
 
         return array_values(array_unique($permissions));

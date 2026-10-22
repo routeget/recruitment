@@ -31,7 +31,10 @@ class DashboardController extends Controller
                 ? DB::table('candidates')->where('tenant_id', $tenantId)->count()
                 : 0,
             'active_applications' => ($tenantId && Schema::hasTable('applications'))
-                ? DB::table('applications')->where('tenant_id', $tenantId)->whereNotIn('current_stage', ['REJECTED', 'WITHDRAWN'])->count()
+                ? DB::table('applications')
+                    ->where('tenant_id', $tenantId)
+                    ->whereNotIn('current_stage', ['REJECTED', 'WITHDRAWN', 'handed_over', 'HIRED_PENDING_HR_HANDOVER'])
+                    ->count()
                 : 0,
             'accepted_offers' => ($tenantId && Schema::hasTable('offers'))
                 ? DB::table('offers')->where('tenant_id', $tenantId)->whereIn('status', ['ACCEPTED', 'accepted'])->count()
@@ -41,7 +44,8 @@ class DashboardController extends Controller
                 : 0,
         ];
 
-        $recentAuditEvents = $tenantId
+        $canViewAudit = $user && $tenantId && $user->hasPermission('audit.view', (int) $tenantId);
+        $recentAuditEvents = $canViewAudit
             ? AuditEvent::where('tenant_id', $tenantId)->orderByDesc('id')->limit(10)->get()
             : collect();
 
