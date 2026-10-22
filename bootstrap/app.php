@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\HrHandoverGateNotSatisfiedException;
 use App\Http\Middleware\EnforceTenantAndSecurityContext;
 use App\Http\Middleware\RequirePermission;
 use Illuminate\Foundation\Application;
@@ -31,4 +32,16 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->is('mcp/*') || $request->expectsJson(),
         );
+        $exceptions->render(function (HrHandoverGateNotSatisfiedException $e, Request $request) {
+            if ($request->expectsJson() || $request->is('api/*') || $request->is('mcp/*')) {
+                return response()->json([
+                    'error' => [
+                        'code' => $e->errorCode,
+                        'message' => $e->getMessage(),
+                    ],
+                ], 409);
+            }
+
+            return response($e->errorCode.': '.$e->getMessage(), 409);
+        });
     })->create();

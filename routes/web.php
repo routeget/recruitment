@@ -9,6 +9,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EvaluationAndDecisionController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\JobPostingController;
+use App\Http\Controllers\OfferAndHrHandoverController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\RequisitionController;
 use Illuminate\Support\Facades\Route;
@@ -143,6 +144,37 @@ Route::middleware('auth')->group(function () {
     Route::get('/analytics', [AnalyticsController::class, 'index'])
         ->middleware('permission:reports.view')
         ->name('analytics.index');
+
+    // Increment 5: Offers & Mandatory HR Validation / Handover Safety Gate
+    Route::get('/offers', [OfferAndHrHandoverController::class, 'offersIndex'])
+        ->middleware('permission:offers.manage')
+        ->name('offers.index');
+    Route::post('/offers/templates', [OfferAndHrHandoverController::class, 'storeOfferTemplate'])
+        ->middleware('permission:offers.manage')
+        ->name('offers.templates.store');
+    Route::post('/offers', [OfferAndHrHandoverController::class, 'storeOffer'])
+        ->middleware('permission:offers.manage')
+        ->name('offers.store');
+    Route::post('/offers/{offer}/issue', [OfferAndHrHandoverController::class, 'issueOffer'])
+        ->middleware('permission:offers.approve')
+        ->name('offers.issue');
+    Route::post('/offers/{offer}/accept', [OfferAndHrHandoverController::class, 'acceptOffer'])
+        ->middleware('permission:offers.manage')
+        ->name('offers.accept');
+    Route::post('/offers/{offer}/revise', [OfferAndHrHandoverController::class, 'reviseOffer'])
+        ->middleware('permission:offers.manage')
+        ->name('offers.revise');
+
+    Route::get('/hr-handover', [OfferAndHrHandoverController::class, 'hrHandoverIndex'])
+        ->name('hr-handover.index');
+    Route::post('/hr-handover/{case}/checklist', [OfferAndHrHandoverController::class, 'updateChecklist'])
+        ->name('hr-handover.checklist');
+    Route::post('/hr-handover/{case}/approve', [OfferAndHrHandoverController::class, 'approveHandover'])
+        ->name('hr-handover.approve');
+    Route::post('/hr-handover/{case}/dispatch', [OfferAndHrHandoverController::class, 'dispatchHandover'])
+        ->name('hr-handover.dispatch');
+    Route::post('/hr-handover/handovers/{handover}/reconcile', [OfferAndHrHandoverController::class, 'reconcileHandover'])
+        ->name('hr-handover.reconcile');
 
     // Increment 1: IAM & Audit
     Route::get('/admin/tenants-iam', [AuditGovernanceController::class, 'iamIndex'])
