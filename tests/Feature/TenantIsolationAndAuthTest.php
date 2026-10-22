@@ -179,5 +179,4 @@ class TenantIsolationAndAuthTest extends TestCase
         $this->assertDatabaseHas('tenants', ['slug' => 'codex-test', 'name' => 'Codex Hiring']);
         $this->get('/codex-test')->assertOk()->assertSee('Explore Open Positions at Codex Hiring');
     }
-
 }
