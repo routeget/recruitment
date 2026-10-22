@@ -117,7 +117,7 @@
             </div>
         </div>
 
-        <div class="card stat-card">
+        <div class="card stat-card mb-4">
             <div class="card-header bg-white fw-bold">Persona &amp; Permission Matrix</div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -137,6 +137,135 @@
                                     <td><span class="badge bg-secondary">{{ $role->permissions->count() }}</span></td>
                                 </tr>
                             @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-1">
+    <div class="col-lg-5">
+        <div class="card stat-card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span class="fw-bold">Microsoft Entra ID Enterprise SSO (OIDC + PKCE)</span>
+                @if(!empty($entraSsoEnabled))
+                    <span class="badge bg-success">OIDC Runtime Enabled</span>
+                @else
+                    <span class="badge bg-secondary">Pending Client Secret</span>
+                @endif
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">
+                    Bind this recruitment tenant (<strong>{{ $tenant->name }}</strong>) to an organizational Microsoft Entra directory (<code>tid</code>). Durable identity linking enforces <code>tid + oid</code> and blocks silent email takeover.
+                </p>
+                <form method="POST" action="{{ route('admin.iam.sso.connections.store') }}">
+                    @csrf
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold">Connection Display Name</label>
+                        <input type="text" name="display_name" class="form-control form-control-sm" required placeholder="{{ $tenant->name }} Entra Directory">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold">Microsoft Entra Directory Tenant ID (<code>tid</code> GUID)</label>
+                        <input type="text" name="entra_tenant_id" class="form-control form-control-sm" required placeholder="11111111-2222-3333-4444-555555555555">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold">Allowed Verified Domains (comma-separated)</label>
+                        <input type="text" name="allowed_domains" class="form-control form-control-sm" placeholder="acme-demo.test, acme.example.org">
+                    </div>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="is_enabled" id="sso_is_enabled" value="1" checked>
+                        <label class="form-check-label small" for="sso_is_enabled">Enable Entra SSO Connection</label>
+                    </div>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="require_sso_for_tenant" id="require_sso_for_tenant" value="1" {{ $tenant->require_sso ? 'checked' : '' }}>
+                        <label class="form-check-label small" for="require_sso_for_tenant">Require Microsoft Entra SSO for Tenant Users</label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="allow_emergency_local_login" id="allow_emergency_local_login" value="1" {{ $tenant->allow_local_fallback ? 'checked' : '' }}>
+                        <label class="form-check-label small" for="allow_emergency_local_login">Allow Emergency Break-Glass Local Login Fallback</label>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary w-100 fw-semibold">Save Entra Directory Connection</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card stat-card mb-4">
+            <div class="card-header bg-white fw-bold">Configured Entra Directory Connections ({{ ($ssoConnections ?? collect())->count() }})</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Display Name</th>
+                                <th>Entra Tenant ID (<code>tid</code>)</th>
+                                <th>Policy</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($ssoConnections ?? [] as $conn)
+                                <tr>
+                                    <td class="fw-semibold small">{{ $conn->display_name }}</td>
+                                    <td><code class="small">{{ $conn->entra_tenant_id }}</code></td>
+                                    <td class="small">
+                                        @if($conn->require_sso_for_tenant && !$conn->allow_emergency_local_login)
+                                            <span class="badge bg-warning text-dark">Strict SSO Required</span>
+                                        @else
+                                            <span class="badge bg-light text-dark border">Hybrid / Break-Glass Allowed</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <span class="badge {{ $conn->is_enabled ? 'bg-success' : 'bg-secondary' }}">
+                                            {{ $conn->is_enabled ? 'ENABLED' : 'DISABLED' }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="4" class="text-muted small text-center py-3">No Microsoft Entra ID directory connections configured for this tenant yet.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card stat-card">
+            <div class="card-header bg-white fw-bold">Linked External Identities (<code>tid + oid</code>) ({{ ($externalIdentities ?? collect())->count() }})</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Local User</th>
+                                <th>Entra Object ID (<code>oid</code>)</th>
+                                <th>Status</th>
+                                <th>Last SSO Login</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($externalIdentities ?? [] as $extId)
+                                <tr>
+                                    <td class="small">
+                                        <div class="fw-semibold">{{ $extId->user?->name }}</div>
+                                        <code>{{ $extId->user?->email }}</code>
+                                    </td>
+                                    <td><code class="small">{{ $extId->entra_object_id }}</code></td>
+                                    <td>
+                                        <span class="badge {{ $extId->status === 'ACTIVE' ? 'bg-success' : 'bg-danger' }}">{{ $extId->status }}</span>
+                                    </td>
+                                    <td class="small text-muted">{{ $extId->last_authenticated_at?->toIso8601String() ?? 'Never' }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="4" class="text-muted small text-center py-3">No linked Microsoft Entra external identities recorded yet.</td>
+                                </tr>
+                            @endforelse
                         </tbody>
                     </table>
                 </div>

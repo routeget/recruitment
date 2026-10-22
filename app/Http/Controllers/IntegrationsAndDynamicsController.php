@@ -73,12 +73,16 @@ class IntegrationsAndDynamicsController extends Controller
         $tenantId = (int) $this->tenantContext->requireTenantId();
         $events = ['application.submitted', 'offer.accepted', 'hr.handover.succeeded'];
 
-        $sub = $this->apiMcpService->createWebhookSubscription($validated['name'], $validated['target_url'], $events, $tenantId, $request->user());
-        $this->apiMcpService->dispatchSignedWebhook($sub, 'webhook.ping', ['message' => 'Initial signed webhook verification ping'], $request->user());
+        try {
+            $sub = $this->apiMcpService->createWebhookSubscription($validated['name'], $validated['target_url'], $events, $tenantId, $request->user());
+            $this->apiMcpService->dispatchSignedWebhook($sub, 'webhook.ping', ['message' => 'Initial signed webhook verification ping'], $request->user());
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['target_url' => $e->getMessage()])->withInput();
+        }
 
         return redirect()
             ->route('integrations.api.index')
-            ->with('status', "Webhook subscription '{$sub->name}' registered and signed verification ping delivered.");
+            ->with('status', "Webhook subscription '{$sub->name}' registered and signed verification ping queued for outbound delivery.");
     }
 
     public function dynamicsIndex(): View

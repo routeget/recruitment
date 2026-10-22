@@ -8,6 +8,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CandidateAndApplicationController;
 use App\Http\Controllers\CareerPortalController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EntraSsoController;
 use App\Http\Controllers\EvaluationAndDecisionController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\IntegrationsAndDynamicsController;
@@ -18,6 +19,7 @@ use App\Http\Controllers\RequisitionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', [HealthController::class, 'jsonHealth'])->name('health');
+Route::get('/health/ready', [HealthController::class, 'jsonReadiness'])->name('health.ready');
 Route::get('/setup/status', [AuthController::class, 'setupStatus'])->name('setup.status');
 
 // Increment 6: Governed MCP Server (/mcp/v1)
@@ -32,6 +34,9 @@ Route::get('/careers/{tenantSlug}/jobs/{jobSlug}', [CareerPortalController::clas
 Route::post('/careers/{tenantSlug}/jobs/{jobSlug}/apply', [CareerPortalController::class, 'submitPublicApplication'])->name('careers.apply');
 Route::get('/sitemap.xml', [CareerPortalController::class, 'sitemap'])->name('careers.sitemap');
 Route::get('/robots.txt', [CareerPortalController::class, 'robots'])->name('careers.robots');
+
+Route::get('/auth/entra/redirect', [EntraSsoController::class, 'redirect'])->name('auth.entra.redirect');
+Route::get('/auth/entra/callback', [EntraSsoController::class, 'callback'])->name('auth.entra.callback');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
@@ -226,6 +231,18 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/tenants-iam/members', [AuditGovernanceController::class, 'storeTenantMember'])
         ->middleware('permission:iam.manage')
         ->name('admin.iam.members.store');
+    Route::post('/admin/tenants-iam/sso/connections', [EntraSsoController::class, 'storeConnection'])
+        ->middleware('permission:iam.manage')
+        ->name('admin.iam.sso.connections.store');
+    Route::post('/admin/tenants-iam/sso/invitations', [EntraSsoController::class, 'createInvitation'])
+        ->middleware('permission:iam.manage')
+        ->name('admin.iam.sso.invitations.store');
+    Route::post('/admin/tenants-iam/sso/identities/link', [EntraSsoController::class, 'linkIdentity'])
+        ->middleware('permission:iam.manage')
+        ->name('admin.iam.sso.identities.link');
+    Route::post('/admin/tenants-iam/sso/identities/{identity}/status', [EntraSsoController::class, 'updateIdentityStatus'])
+        ->middleware('permission:iam.manage')
+        ->name('admin.iam.sso.identities.status');
     Route::post('/admin/platform/support-context', [AuditGovernanceController::class, 'grantPlatformSupportContext'])
         ->name('admin.iam.support-context');
 

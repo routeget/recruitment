@@ -30,6 +30,7 @@ class WebhookSubscription extends Model
     protected function casts(): array
     {
         return [
+            'signing_secret' => 'encrypted',
             'subscribed_events' => 'array',
             'is_active' => 'boolean',
         ];

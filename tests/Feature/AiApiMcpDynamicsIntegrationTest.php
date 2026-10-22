@@ -13,6 +13,7 @@ use App\Models\WebhookDelivery;
 use App\Services\AiGatewayService;
 use App\Services\ApiAndMcpPlatformService;
 use Database\Seeders\AlphaSafeBootstrapSeeder;
+use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use RuntimeException;
 use Tests\TestCase;
@@ -180,7 +181,10 @@ class AiApiMcpDynamicsIntegrationTest extends TestCase
         $conflictResponse->assertStatus(409)
             ->assertJsonPath('error.code', 'IDEMPOTENCY_CONFLICT');
 
-        // 5. Outbound signed webhook subscription & HMAC-SHA256 delivery
+        // 5. Outbound signed webhook subscription & HMAC-SHA256 delivery against controlled HTTP receiver
+        Http::fake([
+            'https://siem.example.org/*' => Http::response(['received' => true], 200),
+        ]);
         $sub = $platformService->createWebhookSubscription(
             name: 'Compliance SIEM Hook',
             targetUrl: 'https://siem.example.org/webhooks/urap',
@@ -191,6 +195,8 @@ class AiApiMcpDynamicsIntegrationTest extends TestCase
         $delivery = $platformService->dispatchSignedWebhook($sub, 'hr.handover.succeeded', ['worker' => 'WRK-1001'], $this->adminA);
         $this->assertStringStartsWith('t=', $delivery->signature_header);
         $this->assertStringContainsString(',v1=', $delivery->signature_header);
+        $this->assertSame('DELIVERED', $delivery->status);
+        $this->assertSame(200, $delivery->response_status);
         $this->assertSame(1, WebhookDelivery::withoutGlobalScopes()->where('id', $delivery->id)->count());
 
         // 6. MCP Server (/mcp/v1/tools and /mcp/v1/invoke)

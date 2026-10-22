@@ -8,7 +8,30 @@
         <div class="card stat-card shadow-sm">
             <div class="card-body p-4">
                 <h1 class="h4 fw-bold mb-1">Sign In</h1>
-                <p class="text-muted small mb-4">Authenticate into your tenant-isolated recruitment workspace.</p>
+                <p class="text-muted small mb-3">Authenticate into your tenant-isolated recruitment workspace.</p>
+
+                <div class="mb-3">
+                    @if(!empty($entraSsoEnabled))
+                        <a href="{{ route('auth.entra.redirect') }}" class="btn btn-outline-dark w-100 fw-semibold d-flex align-items-center justify-content-center gap-2 py-2">
+                            <span>Sign in with Microsoft work or school account</span>
+                        </a>
+                        <div class="text-muted small text-center mt-1">
+                            Microsoft Entra ID OIDC + PKCE (<code>{{ $entraTenantMode ?? 'organizations' }}</code> audience)
+                        </div>
+                    @else
+                        <button type="button" class="btn btn-outline-secondary w-100 fw-semibold py-2" disabled aria-disabled="true">
+                            Sign in with Microsoft work or school account
+                        </button>
+                        <div class="alert alert-secondary py-2 px-3 mt-2 mb-0 small">
+                            <strong>Microsoft Entra ID SSO (Disabled / Unconfigured):</strong>
+                            Organizational OIDC + PKCE S256 (`organizations` audience) is implemented and enforced, but external Entra app registration credentials (<code>MICROSOFT_ENTRA_CLIENT_ID</code>) are not enabled in this environment.
+                        </div>
+                    @endif
+                </div>
+
+                <div class="text-center text-muted small my-3">
+                    <span>— or sign in with tenant workspace credentials —</span>
+                </div>
 
                 <form method="POST" action="{{ route('login.submit') }}" id="loginForm">
                     @csrf

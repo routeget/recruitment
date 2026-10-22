@@ -16,6 +16,7 @@ use App\Models\OfferTemplate;
 use App\Models\OfferVersion;
 use App\Models\TransactionalOutboxEvent;
 use App\Models\User;
+use App\Support\ApiClientPrincipal;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -488,17 +489,20 @@ class OfferAndHrHandoverService
      */
     public function dispatchHandover(
         HrValidationCase $case,
-        User $actor,
+        User|ApiClientPrincipal $actor,
         ?string $idempotencyKey = null,
         string $simulatedOutcome = 'succeeded',
     ): HrHandover {
         $tenantId = (int) $case->tenant_id;
+        $actorUserId = $actor instanceof User ? (int) $actor->id : null;
+        $actorType = $actor instanceof ApiClientPrincipal ? $actor->getActorType() : 'USER';
+        $actorIdentifier = $actor instanceof ApiClientPrincipal ? $actor->getActorIdentifier() : $actor->email;
 
         if (! $actor->hasPermission('hr_handover.dispatch', $tenantId) && ! $actor->hasRole('tenant_admin', $tenantId)) {
             throw new AuthorizationException('User does not have permission to dispatch HR handover (hr_handover.dispatch).');
         }
 
-        return DB::transaction(function () use ($case, $actor, $idempotencyKey, $simulatedOutcome, $tenantId): HrHandover {
+        return DB::transaction(function () use ($case, $actorUserId, $actorType, $actorIdentifier, $idempotencyKey, $simulatedOutcome, $tenantId): HrHandover {
             /** @var HrValidationCase $lockedCase */
             $lockedCase = HrValidationCase::query()->whereKey($case->id)->lockForUpdate()->firstOrFail();
 
@@ -531,7 +535,9 @@ class OfferAndHrHandoverService
                             'status' => $existingByKey->status,
                         ],
                         tenantId: $tenantId,
-                        actorUserId: (int) $actor->id,
+                        actorUserId: $actorUserId,
+                        actorType: $actorType,
+                        actorIdentifier: $actorIdentifier,
                     );
 
                     return $existingByKey->fresh(['externalEmployeeReference', 'approval']);
@@ -660,7 +666,9 @@ class OfferAndHrHandoverService
                         'requires_reconciliation' => true,
                     ],
                     tenantId: $tenantId,
-                    actorUserId: (int) $actor->id,
+                    actorUserId: $actorUserId,
+                    actorType: $actorType,
+                    actorIdentifier: $actorIdentifier,
                 );
 
                 return $handover->fresh(['approval']);
@@ -704,7 +712,7 @@ class OfferAndHrHandoverService
                 'application_id' => $application->id,
                 'from_stage' => $fromStage,
                 'to_stage' => 'handed_over',
-                'actor_user_id' => $actor->id,
+                'actor_user_id' => $actorUserId,
                 'notes' => 'Employee handover succeeded in Dynamics 365 Finance HR ('.$externalEmployeeId.').',
                 'created_at' => now(),
             ]);
@@ -744,7 +752,9 @@ class OfferAndHrHandoverService
                     'external_worker_number' => $workerNumber,
                 ],
                 tenantId: $tenantId,
-                actorUserId: (int) $actor->id,
+                actorUserId: $actorUserId,
+                actorType: $actorType,
+                actorIdentifier: $actorIdentifier,
             );
 
             return $handover->fresh(['externalEmployeeReference', 'approval']);

@@ -24,6 +24,8 @@ class Tenant extends Model
         'ai_monthly_budget_usd',
         'mcp_enabled',
         'dynamics_live_enabled',
+        'require_sso',
+        'allow_local_fallback',
         'is_demo',
     ];
 
@@ -37,6 +39,8 @@ class Tenant extends Model
             'ai_monthly_budget_usd' => 'decimal:2',
             'mcp_enabled' => 'boolean',
             'dynamics_live_enabled' => 'boolean',
+            'require_sso' => 'boolean',
+            'allow_local_fallback' => 'boolean',
             'is_demo' => 'boolean',
         ];
     }
@@ -53,5 +57,20 @@ class Tenant extends Model
     public function memberships(): HasMany
     {
         return $this->hasMany(TenantMembership::class);
+    }
+
+    public function externalIdentityConnections(): HasMany
+    {
+        return $this->hasMany(ExternalIdentityConnection::class);
+    }
+
+    public function externalIdentities(): HasMany
+    {
+        return $this->hasMany(ExternalIdentity::class);
+    }
+
+    public function ssoInvitations(): HasMany
+    {
+        return $this->hasMany(SsoInvitation::class);
     }
 }

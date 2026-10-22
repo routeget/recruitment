@@ -24,7 +24,12 @@ class WebhookDelivery extends Model
         'response_status',
         'attempt_count',
         'status',
+        'error_code',
+        'error_message',
+        'response_body_excerpt',
+        'queued_at',
         'delivered_at',
+        'failed_at',
     ];
 
     protected function casts(): array
@@ -33,7 +38,9 @@ class WebhookDelivery extends Model
             'payload' => 'array',
             'response_status' => 'integer',
             'attempt_count' => 'integer',
+            'queued_at' => 'datetime',
             'delivered_at' => 'datetime',
+            'failed_at' => 'datetime',
         ];
     }
 

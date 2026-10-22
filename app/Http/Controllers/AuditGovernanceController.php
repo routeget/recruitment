@@ -3,12 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditEvent;
+use App\Models\ExternalIdentity;
+use App\Models\ExternalIdentityConnection;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\SsoInvitation;
 use App\Models\Tenant;
 use App\Models\TenantMembership;
 use App\Models\User;
 use App\Services\AuditService;
+use App\Services\EntraSsoService;
 use App\Services\TenantContextService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -46,7 +50,7 @@ class AuditGovernanceController extends Controller
         ]);
     }
 
-    public function iamIndex(TenantContextService $context): View
+    public function iamIndex(TenantContextService $context, EntraSsoService $entraSso): View
     {
         $tenant = $context->getActiveTenant();
         $memberships = TenantMembership::where('tenant_id', $tenant->id)
@@ -63,12 +67,34 @@ class AuditGovernanceController extends Controller
         $permissions = Permission::orderBy('module')->orderBy('slug')->get();
         $allTenants = Auth::user()->is_platform_superadmin ? Tenant::orderBy('id')->get() : collect([$tenant]);
 
+        $ssoConnections = ExternalIdentityConnection::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->id)
+            ->orderByDesc('id')
+            ->get();
+
+        $externalIdentities = ExternalIdentity::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->id)
+            ->with(['user', 'connection'])
+            ->orderByDesc('id')
+            ->get();
+
+        $ssoInvitations = SsoInvitation::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->id)
+            ->with(['role', 'connection'])
+            ->orderByDesc('id')
+            ->limit(25)
+            ->get();
+
         return view('admin.tenants_iam', [
             'tenant' => $tenant,
             'memberships' => $memberships,
             'roles' => $roles,
             'permissions' => $permissions,
             'allTenants' => $allTenants,
+            'ssoConnections' => $ssoConnections,
+            'externalIdentities' => $externalIdentities,
+            'ssoInvitations' => $ssoInvitations,
+            'entraSsoEnabled' => $entraSso->isEnabled(),
         ]);
     }
 

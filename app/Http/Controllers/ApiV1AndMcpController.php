@@ -17,10 +17,12 @@ use App\Models\Location;
 use App\Models\Requisition;
 use App\Models\User;
 use App\Services\ApiAndMcpPlatformService;
+use App\Services\AuditService;
 use App\Services\CandidateAndApplicationService;
 use App\Services\OfferAndHrHandoverService;
 use App\Services\RequisitionService;
 use App\Services\TenantContextService;
+use App\Support\ApiClientPrincipal;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,6 +37,7 @@ class ApiV1AndMcpController extends Controller
         private readonly CandidateAndApplicationService $candidateAppService,
         private readonly OfferAndHrHandoverService $handoverService,
         private readonly TenantContextService $tenantContext,
+        private readonly AuditService $audit,
     ) {}
 
     public function listRequisitions(Request $request): JsonResponse
@@ -86,7 +89,7 @@ class ApiV1AndMcpController extends Controller
                         'legal_entity_id' => $le->id,
                         'department_id' => $dept->id,
                         'location_id' => $loc->id,
-                        'hiring_manager_user_id' => $actor->id,
+                        'hiring_manager_user_id' => $actor instanceof User ? $actor->id : null,
                         'title' => $payload['title'],
                         'employment_type' => $payload['employment_type'] ?? 'FULL_TIME',
                         'headcount' => (int) $payload['headcount'],
@@ -167,23 +170,23 @@ class ApiV1AndMcpController extends Controller
                 '/api/v1/candidates',
                 $payload,
                 function () use ($tenantId, $actor, $payload): array {
-                    $candidate = $this->candidateAppService->upsertCandidateWithConsent($tenantId, [
+                    $candidate = $this->candidateAppService->upsertCandidateWithConsent([
                         'first_name' => $payload['first_name'],
                         'last_name' => $payload['last_name'],
-                        'primary_email' => $payload['primary_email'],
+                        'email' => $payload['primary_email'],
                         'phone' => $payload['phone'] ?? null,
                         'source_channel' => 'API_V1',
-                        'consent_accepted' => (bool) $payload['consent_accepted'],
+                        'consent_given' => (bool) $payload['consent_accepted'],
                         'consent_version' => 'v2.0',
-                    ], $actor->id);
+                    ], $tenantId, $actor instanceof User ? $actor : null);
 
                     return [
                         'status' => 201,
                         'body' => [
                             'id' => $candidate->id,
                             'uuid' => $candidate->uuid,
-                            'primary_email' => $candidate->primary_email,
-                            'consent_accepted' => $candidate->consent_accepted,
+                            'primary_email' => $candidate->email,
+                            'consent_accepted' => $candidate->consent_given,
                         ],
                     ];
                 }
@@ -201,7 +204,7 @@ class ApiV1AndMcpController extends Controller
 
         $items = Application::withoutGlobalScopes()
             ->where('tenant_id', $tenantId)
-            ->with(['candidate:id,first_name,last_name,primary_email', 'jobPosting:id,title,slug'])
+            ->with(['candidate:id,first_name,last_name,email', 'jobPosting:id,title,slug'])
             ->latest('id')
             ->limit(25)
             ->get();
@@ -262,6 +265,7 @@ class ApiV1AndMcpController extends Controller
         return $this->envelope([
             'protocol' => 'mcp/v1',
             'tenant_id' => $tenantId,
+            'principal_type' => $actor instanceof ApiClientPrincipal ? 'API_CLIENT' : 'USER',
             'tools' => $tools,
             'prohibited_tools_enforced' => ApiAndMcpPlatformService::PROHIBITED_MCP_TOOLS,
         ]);
@@ -294,9 +298,9 @@ class ApiV1AndMcpController extends Controller
 
     /**
      * Resolves caller identity and tenant strictly from Bearer API Client credentials or authenticated session.
-     * Never trusts a browser/body tenant_id override.
+     * Machine principals return an ApiClientPrincipal and NEVER inherit human User roles or fallback to any User record.
      *
-     * @return array{0: int, 1: User}
+     * @return array{0: int, 1: User|ApiClientPrincipal}
      */
     private function resolveApiAuthContext(Request $request, string $requiredScope): array
     {
@@ -306,30 +310,51 @@ class ApiV1AndMcpController extends Controller
             /** @var ApiClient|null $client */
             $client = ApiClient::withoutGlobalScopes()
                 ->where('client_id', $clientId)
-                ->where('is_active', true)
                 ->first();
 
-            if ($client === null || ! hash_equals($client->client_secret_hash, hash('sha256', $rawSecret))) {
+            if ($client === null || ! $client->is_active || ! hash_equals($client->client_secret_hash, hash('sha256', $rawSecret))) {
+                $this->audit->record(
+                    module: 'api_platform',
+                    action: 'api_client.auth_failed',
+                    outcome: 'DENIED',
+                    errorCode: 'UNAUTHENTICATED_API_CLIENT',
+                    metadata: ['client_id' => $clientId],
+                    tenantId: $client ? (int) $client->tenant_id : null,
+                    actorType: 'API_CLIENT',
+                    actorIdentifier: $clientId,
+                );
+
                 abort(response()->json([
                     'error' => ['code' => 'UNAUTHENTICATED_API_CLIENT', 'message' => 'Invalid or inactive API client credentials.'],
                 ], 401));
             }
 
-            $scopes = $client->scopes ?? [];
-            if (! in_array($requiredScope, $scopes, true) && ! in_array('*', $scopes, true)) {
+            $principal = new ApiClientPrincipal($client);
+            $tenantId = $principal->getTenantId();
+            $this->tenantContext->setActiveTenantId($tenantId);
+
+            if (! $principal->hasScope($requiredScope)) {
+                $this->audit->record(
+                    module: 'api_platform',
+                    action: 'api_client.scope_denied',
+                    outcome: 'DENIED',
+                    errorCode: 'INSUFFICIENT_API_SCOPE',
+                    entityType: 'api_client',
+                    entityId: (string) $client->id,
+                    metadata: ['required_scope' => $requiredScope, 'client_scopes' => $client->scopes],
+                    tenantId: $tenantId,
+                    actorType: 'API_CLIENT',
+                    actorIdentifier: $principal->getClientId(),
+                );
+
                 abort(response()->json([
                     'error' => ['code' => 'INSUFFICIENT_API_SCOPE', 'message' => "API client lacks required scope '{$requiredScope}'."],
                 ], 403));
             }
 
             $client->update(['last_used_at' => now()]);
-            $tenantId = (int) $client->tenant_id;
-            $this->tenantContext->setActiveTenantId($tenantId);
 
-            $serviceUser = User::query()->where('current_tenant_id', $tenantId)->first()
-                ?? User::query()->firstOrFail();
-
-            return [$tenantId, $serviceUser];
+            return [$tenantId, $principal];
         }
 
         $user = $request->user();

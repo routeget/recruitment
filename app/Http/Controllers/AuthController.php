@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ExternalIdentityConnection;
 use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\AuditService;
+use App\Services\EntraSsoService;
 use App\Services\TenantContextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -16,7 +18,7 @@ use Illuminate\View\View;
 
 class AuthController extends Controller
 {
-    public function showLogin(): View|RedirectResponse
+    public function showLogin(EntraSsoService $entraSso): View|RedirectResponse
     {
         if (Auth::check()) {
             return redirect()->route('dashboard');
@@ -40,11 +42,18 @@ class AuthController extends Controller
 
         return view('auth.login', [
             'demoPersonas' => $demoPersonas,
+            'entraSsoEnabled' => $entraSso->isEnabled(),
+            'entraTenantMode' => (string) config('entra_sso.tenant_mode', 'organizations'),
+            'entraConnectionsCount' => ExternalIdentityConnection::withoutGlobalScopes()->where('is_enabled', true)->count(),
         ]);
     }
 
-    public function login(Request $request, AuditService $audit, TenantContextService $context): RedirectResponse
-    {
+    public function login(
+        Request $request,
+        AuditService $audit,
+        TenantContextService $context,
+        EntraSsoService $entraSso,
+    ): RedirectResponse {
         $credentials = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
@@ -62,6 +71,26 @@ class AuthController extends Controller
 
             return back()->withErrors([
                 'email' => 'RATE_LIMITED: Too many login attempts. Please wait before retrying.',
+            ])->onlyInput('email');
+        }
+
+        // Enforce tenant-required Microsoft Entra ID SSO before accepting local password authentication
+        $candidateUser = User::where('email', strtolower($credentials['email']))->first();
+        if ($candidateUser !== null && $entraSso->isLocalPasswordLoginBlockedForUser($candidateUser)) {
+            $audit->record(
+                module: 'sso',
+                action: 'local_login_blocked_sso_required',
+                outcome: 'DENIED',
+                errorCode: 'SSO_REQUIRED_FOR_TENANT',
+                entityType: 'User',
+                entityId: (string) $candidateUser->id,
+                actorIdentifier: $candidateUser->email,
+                tenantId: $candidateUser->current_tenant_id,
+                actorUserId: $candidateUser->id,
+            );
+
+            return back()->withErrors([
+                'email' => 'SSO_REQUIRED_FOR_TENANT: Your organization requires Microsoft Entra ID Single Sign-On. Local password login is disabled for this tenant.',
             ])->onlyInput('email');
         }
 
@@ -174,6 +203,7 @@ class AuthController extends Controller
 
         return response()->json([
             'status' => $initialized ? 'INITIALIZED_LOCKED' : 'PENDING_BOOTSTRAP',
+            'error_code' => 'PUBLIC_SETUP_LOCKED',
             'public_setup_enabled' => false,
             'message' => 'Initial bootstrap is governed via CLI seeder only; public setup endpoints are disabled.',
         ], 403);

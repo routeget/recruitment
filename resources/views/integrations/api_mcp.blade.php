@@ -80,8 +80,23 @@
                             <div>
                                 <code>{{ $del->event_type }}</code> ({{ $del->event_id }})
                                 <div class="text-muted">Sig: <code>{{ substr($del->signature_header, 0, 28) }}...</code></div>
+                                @if($del->error_code)
+                                    <div class="text-danger small">Error: <code>{{ $del->error_code }}</code></div>
+                                @endif
                             </div>
-                            <span class="badge bg-success">{{ $del->status }} (HTTP {{ $del->response_status }})</span>
+                            @php
+                                $badgeClass = match ($del->status) {
+                                    'DELIVERED' => 'bg-success',
+                                    'PENDING' => 'bg-warning text-dark',
+                                    default => 'bg-danger',
+                                };
+                            @endphp
+                            <span class="badge {{ $badgeClass }}">
+                                {{ $del->status }}
+                                @if($del->response_status)
+                                    (HTTP {{ $del->response_status }})
+                                @endif
+                            </span>
                         </li>
                     @empty
                         <li class="list-group-item px-0 text-muted">No webhook deliveries recorded yet.</li>

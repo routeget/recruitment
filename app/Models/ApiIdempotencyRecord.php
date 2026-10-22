@@ -19,6 +19,7 @@ class ApiIdempotencyRecord extends Model
         'method',
         'path',
         'request_hash',
+        'status',
         'response_status',
         'response_body',
         'expires_at',

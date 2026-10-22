@@ -61,6 +61,11 @@ class User extends Authenticatable
         return $this->hasMany(TenantMembership::class);
     }
 
+    public function externalIdentities(): HasMany
+    {
+        return $this->hasMany(ExternalIdentity::class);
+    }
+
     public function activeMembershipsForTenant(int $tenantId): HasMany
     {
         return $this->memberships()

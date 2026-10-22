@@ -9,9 +9,13 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mariadb_version: ['11.4', '12.3']
     services:
       mariadb:
-        image: mariadb:11.4
+        image: mariadb:${{ matrix.mariadb_version }}
         env:
           MARIADB_ROOT_PASSWORD: root
           MARIADB_DATABASE: recruitment_test

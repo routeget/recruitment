@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Jobs\DeliverSignedWebhookJob;
 use App\Models\ApiClient;
 use App\Models\ApiIdempotencyRecord;
 use App\Models\Application;
@@ -14,7 +15,11 @@ use App\Models\Requisition;
 use App\Models\User;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookSubscription;
+use App\Support\ApiClientPrincipal;
+use App\Support\WebhookSsrfGuard;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
@@ -70,6 +75,7 @@ class ApiAndMcpPlatformService
 
     public function __construct(
         private readonly AuditService $auditService,
+        private readonly WebhookSsrfGuard $ssrfGuard,
     ) {}
 
     /**
@@ -86,7 +92,7 @@ class ApiAndMcpPlatformService
             'name' => trim($name),
             'client_id' => $clientId,
             'client_secret_hash' => hash('sha256', $rawSecret),
-            'scopes' => $scopes,
+            'scopes' => array_values(array_unique($scopes)),
             'rate_limit_per_minute' => 60,
             'is_active' => true,
         ]);
@@ -96,7 +102,7 @@ class ApiAndMcpPlatformService
             action: 'api_client.created',
             entityType: 'api_client',
             entityId: (string) $client->id,
-            metadata: ['client_id' => $clientId, 'scopes' => $scopes],
+            metadata: ['client_id' => $clientId, 'scopes' => $client->scopes],
             tenantId: $tenantId,
             actorUserId: (int) $actor->id,
         );
@@ -105,9 +111,12 @@ class ApiAndMcpPlatformService
     }
 
     /**
-     * Enforces Idempotency-Key semantics:
-     * - Same key + same request_hash -> returns cached status & body
+     * Enforces atomic, concurrency-safe Idempotency-Key semantics:
+     * - Reserves `(tenant_id, idempotency_key)` inside a transaction with row locking (`lockForUpdate()`)
+     * - Handles unique-constraint race condition deterministically without unhandled 500s
+     * - Same key + same request_hash -> returns cached status & body without re-running callback
      * - Same key + different request_hash -> throws RuntimeException('IDEMPOTENCY_CONFLICT', 409)
+     * - Rolls back reservation if callback fails
      *
      * @param  array<string, mixed>  $requestPayload
      * @param  callable(): array{status: int, body: array<string, mixed>}  $callback
@@ -121,45 +130,66 @@ class ApiAndMcpPlatformService
         array $requestPayload,
         callable $callback,
     ): array {
-        ksort($requestPayload);
-        $requestHash = hash('sha256', $method.'|'.$path.'|'.json_encode($requestPayload));
+        $canonicalPayload = $this->canonicalizeArray($requestPayload);
+        $requestHash = hash('sha256', strtoupper($method).'|'.$path.'|'.json_encode($canonicalPayload));
 
-        /** @var ApiIdempotencyRecord|null $existing */
-        $existing = ApiIdempotencyRecord::withoutGlobalScopes()
-            ->where('tenant_id', $tenantId)
-            ->where('idempotency_key', $idempotencyKey)
-            ->first();
+        return DB::transaction(function () use ($tenantId, $idempotencyKey, $method, $path, $requestHash, $callback): array {
+            /** @var ApiIdempotencyRecord|null $existing */
+            $existing = ApiIdempotencyRecord::withoutGlobalScopes()
+                ->where('tenant_id', $tenantId)
+                ->where('idempotency_key', $idempotencyKey)
+                ->lockForUpdate()
+                ->first();
 
-        if ($existing !== null) {
-            if (! hash_equals($existing->request_hash, $requestHash)) {
-                throw new RuntimeException('Idempotency-Key was already used with a different request payload (IDEMPOTENCY_CONFLICT).', 409);
+            if ($existing !== null) {
+                return $this->resolveExistingIdempotencyRecord($existing, $requestHash);
             }
 
+            try {
+                /** @var ApiIdempotencyRecord $reservation */
+                $reservation = ApiIdempotencyRecord::withoutGlobalScopes()->create([
+                    'tenant_id' => $tenantId,
+                    'idempotency_key' => $idempotencyKey,
+                    'method' => strtoupper($method),
+                    'path' => $path,
+                    'request_hash' => $requestHash,
+                    'status' => 'IN_PROGRESS',
+                    'response_status' => 0,
+                    'response_body' => [],
+                    'expires_at' => now()->addHours(24),
+                ]);
+            } catch (QueryException $e) {
+                // Recover deterministically from concurrent unique constraint race on (tenant_id, idempotency_key)
+                if ($this->isUniqueConstraintViolation($e)) {
+                    /** @var ApiIdempotencyRecord|null $raced */
+                    $raced = ApiIdempotencyRecord::withoutGlobalScopes()
+                        ->where('tenant_id', $tenantId)
+                        ->where('idempotency_key', $idempotencyKey)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($raced !== null) {
+                        return $this->resolveExistingIdempotencyRecord($raced, $requestHash);
+                    }
+                }
+
+                throw $e;
+            }
+
+            $result = $callback();
+
+            $reservation->update([
+                'status' => 'COMPLETED',
+                'response_status' => (int) $result['status'],
+                'response_body' => (array) $result['body'],
+            ]);
+
             return [
-                'status' => $existing->response_status,
-                'body' => $existing->response_body,
-                'replayed' => true,
+                'status' => (int) $result['status'],
+                'body' => (array) $result['body'],
+                'replayed' => false,
             ];
-        }
-
-        $result = $callback();
-
-        ApiIdempotencyRecord::withoutGlobalScopes()->create([
-            'tenant_id' => $tenantId,
-            'idempotency_key' => $idempotencyKey,
-            'method' => $method,
-            'path' => $path,
-            'request_hash' => $requestHash,
-            'response_status' => $result['status'],
-            'response_body' => $result['body'],
-            'expires_at' => now()->addHours(24),
-        ]);
-
-        return [
-            'status' => $result['status'],
-            'body' => $result['body'],
-            'replayed' => false,
-        ];
+        });
     }
 
     /**
@@ -167,6 +197,8 @@ class ApiAndMcpPlatformService
      */
     public function createWebhookSubscription(string $name, string $targetUrl, array $subscribedEvents, int $tenantId, User $actor): WebhookSubscription
     {
+        $this->ssrfGuard->assertSafeTargetUrl($targetUrl);
+
         $signingSecret = 'whsec_'.Str::random(32);
 
         $sub = WebhookSubscription::query()->create([
@@ -192,6 +224,9 @@ class ApiAndMcpPlatformService
     }
 
     /**
+     * Enqueues a signed outbound webhook delivery in PENDING state and dispatches DeliverSignedWebhookJob.
+     * Never marks a delivery as DELIVERED until a real outbound HTTP 2xx response is received.
+     *
      * @param  array<string, mixed>  $data
      */
     public function dispatchSignedWebhook(WebhookSubscription $subscription, string $eventType, array $data, ?User $actor = null): WebhookDelivery
@@ -208,7 +243,7 @@ class ApiAndMcpPlatformService
         ];
 
         $rawJson = (string) json_encode($envelope);
-        $signature = 't='.$timestamp.',v1='.hash_hmac('sha256', $timestamp.'.'.$rawJson, $subscription->signing_secret);
+        $signature = 't='.$timestamp.',v1='.hash_hmac('sha256', $timestamp.'.'.$rawJson, (string) $subscription->signing_secret);
 
         $delivery = WebhookDelivery::query()->create([
             'tenant_id' => $subscription->tenant_id,
@@ -217,35 +252,47 @@ class ApiAndMcpPlatformService
             'event_type' => $eventType,
             'payload' => $envelope,
             'signature_header' => $signature,
-            'response_status' => 200,
-            'attempt_count' => 1,
-            'status' => 'DELIVERED',
-            'delivered_at' => now(),
+            'response_status' => null,
+            'attempt_count' => 0,
+            'status' => 'PENDING',
+            'queued_at' => now(),
+            'delivered_at' => null,
         ]);
 
         $this->auditService->record(
             module: 'api_platform',
-            action: 'webhook.dispatched',
+            action: 'webhook.queued',
             entityType: 'webhook_delivery',
             entityId: (string) $delivery->id,
             metadata: [
                 'event_id' => $eventId,
                 'event_type' => $eventType,
                 'subscription_id' => $subscription->id,
+                'status' => 'PENDING',
             ],
             tenantId: (int) $subscription->tenant_id,
             actorUserId: $actor ? (int) $actor->id : null,
         );
 
-        return $delivery;
+        DeliverSignedWebhookJob::dispatch((int) $delivery->id);
+
+        return $delivery->fresh();
     }
 
     /**
      * @param  array<string, mixed>  $arguments
      * @return array<string, mixed>
      */
-    public function invokeMcpTool(string $toolName, array $arguments, User $actor, int $tenantId): array
-    {
+    public function invokeMcpTool(
+        string $toolName,
+        array $arguments,
+        User|ApiClientPrincipal $actor,
+        int $tenantId,
+    ): array {
+        $actorUserId = $actor instanceof User ? (int) $actor->id : null;
+        $actorType = $actor instanceof ApiClientPrincipal ? $actor->getActorType() : 'USER';
+        $actorIdentifier = $actor instanceof ApiClientPrincipal ? $actor->getActorIdentifier() : $actor->email;
+
         if (in_array($toolName, self::PROHIBITED_MCP_TOOLS, true) || ! array_key_exists($toolName, self::ALLOWLISTED_MCP_TOOLS)) {
             $this->auditService->record(
                 module: 'mcp_server',
@@ -256,14 +303,23 @@ class ApiAndMcpPlatformService
                 entityId: $toolName,
                 metadata: ['tool_name' => $toolName],
                 tenantId: $tenantId,
-                actorUserId: (int) $actor->id,
+                actorUserId: $actorUserId,
+                actorType: $actorType,
+                actorIdentifier: $actorIdentifier,
             );
 
             throw new InvalidArgumentException("MCP tool '{$toolName}' is not allowlisted or is explicitly prohibited (MCP_TOOL_PROHIBITED).");
         }
 
+        // Enforce explicit per-tool least-privilege scope / permission (never inherited from any human user)
         $toolMeta = self::ALLOWLISTED_MCP_TOOLS[$toolName];
-        if (! $actor->hasPermission($toolMeta['required_permission'], $tenantId) && ! $actor->hasRole('tenant_admin', $tenantId)) {
+        $requiredPerm = $toolMeta['required_permission'];
+
+        $authorized = $actor instanceof ApiClientPrincipal
+            ? ($actor->hasScope('mcp.use') && $actor->hasPermission($requiredPerm, $tenantId))
+            : ($actor->hasPermission($requiredPerm, $tenantId) || $actor->hasRole('tenant_admin', $tenantId));
+
+        if (! $authorized) {
             $this->auditService->record(
                 module: 'mcp_server',
                 action: 'mcp.tool_forbidden',
@@ -271,12 +327,17 @@ class ApiAndMcpPlatformService
                 errorCode: 'MCP_PERMISSION_DENIED',
                 entityType: 'mcp_tool',
                 entityId: $toolName,
-                metadata: ['required_permission' => $toolMeta['required_permission']],
+                metadata: [
+                    'required_permission' => $requiredPerm,
+                    'actor_type' => $actorType,
+                ],
                 tenantId: $tenantId,
-                actorUserId: (int) $actor->id,
+                actorUserId: $actorUserId,
+                actorType: $actorType,
+                actorIdentifier: $actorIdentifier,
             );
 
-            throw new AuthorizationException("Caller lacks required permission '{$toolMeta['required_permission']}' for MCP tool '{$toolName}'.");
+            throw new AuthorizationException("Caller lacks required permission '{$requiredPerm}' for MCP tool '{$toolName}'.");
         }
 
         $result = match ($toolName) {
@@ -304,18 +365,18 @@ class ApiAndMcpPlatformService
                         $q->where(function ($sub) use ($term) {
                             $sub->where('first_name', 'like', $term)
                                 ->orWhere('last_name', 'like', $term)
-                                ->orWhere('primary_email', 'like', $term);
+                                ->orWhere('email', 'like', $term);
                         });
                     })
                     ->latest('id')
                     ->limit(10)
-                    ->get(['id', 'uuid', 'first_name', 'last_name', 'primary_email', 'consent_accepted'])
+                    ->get(['id', 'uuid', 'candidate_code', 'first_name', 'last_name', 'email', 'consent_given'])
                     ->toArray(),
             ],
             'application.get' => [
                 'application' => Application::withoutGlobalScopes()
                     ->where('tenant_id', $tenantId)
-                    ->with(['candidate:id,first_name,last_name,primary_email', 'jobPosting:id,title,slug'])
+                    ->with(['candidate:id,first_name,last_name,email', 'jobPosting:id,title,slug'])
                     ->findOrFail((int) ($arguments['application_id'] ?? 0))
                     ->toArray(),
             ],
@@ -338,9 +399,14 @@ class ApiAndMcpPlatformService
             action: 'mcp.tool_invoked',
             entityType: 'mcp_tool',
             entityId: $toolName,
-            metadata: ['tool_name' => $toolName],
+            metadata: [
+                'tool_name' => $toolName,
+                'required_permission' => $requiredPerm,
+            ],
             tenantId: $tenantId,
-            actorUserId: (int) $actor->id,
+            actorUserId: $actorUserId,
+            actorType: $actorType,
+            actorIdentifier: $actorIdentifier,
         );
 
         return [
@@ -348,5 +414,59 @@ class ApiAndMcpPlatformService
             'tenant_id' => $tenantId,
             'result' => $result,
         ];
+    }
+
+    /**
+     * @return array{status: int, body: array<string, mixed>, replayed: bool}
+     */
+    private function resolveExistingIdempotencyRecord(ApiIdempotencyRecord $existing, string $requestHash): array
+    {
+        if (! hash_equals($existing->request_hash, $requestHash)) {
+            throw new RuntimeException(
+                'Idempotency-Key was already used with a different request payload (IDEMPOTENCY_CONFLICT).',
+                409
+            );
+        }
+
+        if ($existing->status === 'IN_PROGRESS') {
+            throw new RuntimeException(
+                'A concurrent request with this Idempotency-Key is currently in progress (IDEMPOTENCY_CONFLICT).',
+                409
+            );
+        }
+
+        return [
+            'status' => (int) $existing->response_status,
+            'body' => (array) $existing->response_body,
+            'replayed' => true,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function canonicalizeArray(array $data): array
+    {
+        ksort($data);
+        foreach ($data as $k => $v) {
+            if (is_array($v)) {
+                $data[$k] = $this->canonicalizeArray($v);
+            }
+        }
+
+        return $data;
+    }
+
+    private function isUniqueConstraintViolation(QueryException $e): bool
+    {
+        $sqlState = (string) ($e->errorInfo[0] ?? $e->getCode());
+        $driverCode = (int) ($e->errorInfo[1] ?? 0);
+
+        return $sqlState === '23000'
+            || $sqlState === '23505'
+            || $driverCode === 1062
+            || str_contains(strtolower($e->getMessage()), 'unique')
+            || str_contains(strtolower($e->getMessage()), 'duplicate entry');
     }
 }

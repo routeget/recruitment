@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AuditEvent;
 use App\Models\Tenant;
+use App\Services\EntraSsoService;
 use App\Services\TenantContextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
@@ -15,25 +16,14 @@ use Throwable;
 
 class HealthController extends Controller
 {
-    public function jsonHealth(TenantContextService $context): JsonResponse
+    public function jsonHealth(TenantContextService $context, EntraSsoService $entraSso): JsonResponse
     {
-        $checks = $this->runOperationalChecks();
-        $overallHealthy = $checks['database']['healthy'] && $checks['private_storage']['healthy'];
+        return $this->buildHealthResponse($context, $entraSso, 'liveness_and_readiness');
+    }
 
-        return response()->json([
-            'status' => $overallHealthy ? 'OK' : 'DEGRADED',
-            'service' => 'Unified Recruitment AI Platform',
-            'release_stage' => 'Alpha',
-            'correlation_id' => $context->getCorrelationId(),
-            'timestamp' => now()->toIso8601String(),
-            'checks' => [
-                'database' => $checks['database']['status'],
-                'cache_redis' => $checks['cache_redis']['status'],
-                'private_storage' => $checks['private_storage']['status'],
-                'hr_handover_safety_gate' => 'ENFORCED',
-                'dynamics_live_employee_creation' => 'DISABLED_BY_DEFAULT',
-            ],
-        ], $overallHealthy ? 200 : 503);
+    public function jsonReadiness(TenantContextService $context, EntraSsoService $entraSso): JsonResponse
+    {
+        return $this->buildHealthResponse($context, $entraSso, 'readiness');
     }
 
     public function diagnosticsPage(TenantContextService $context): View
@@ -49,6 +39,36 @@ class HealthController extends Controller
             'auditEventCount' => $tenant ? AuditEvent::where('tenant_id', $tenant->id)->count() : 0,
             'totalTenantsCount' => Tenant::count(),
         ]);
+    }
+
+    private function buildHealthResponse(
+        TenantContextService $context,
+        EntraSsoService $entraSso,
+        string $probeType,
+    ): JsonResponse {
+        $checks = $this->runOperationalChecks();
+        $overallHealthy = $checks['database']['healthy']
+            && $checks['cache_redis']['healthy']
+            && $checks['private_storage']['healthy']
+            && $checks['queue']['healthy'];
+
+        return response()->json([
+            'status' => $overallHealthy ? 'OK' : 'DEGRADED',
+            'probe_type' => $probeType,
+            'service' => 'Unified Recruitment AI Platform',
+            'release_stage' => 'Alpha',
+            'correlation_id' => $context->getCorrelationId(),
+            'timestamp' => now()->toIso8601String(),
+            'checks' => [
+                'database' => $checks['database']['status'],
+                'cache_redis' => $checks['cache_redis']['status'],
+                'private_storage' => $checks['private_storage']['status'],
+                'queue' => $checks['queue']['status'],
+                'microsoft_entra_sso' => $entraSso->isEnabled() ? 'ENABLED' : 'DISABLED_BY_DEFAULT',
+                'hr_handover_safety_gate' => 'ENFORCED',
+                'dynamics_live_employee_creation' => 'DISABLED_BY_DEFAULT',
+            ],
+        ], $overallHealthy ? 200 : 503);
     }
 
     private function runOperationalChecks(): array
@@ -87,10 +107,17 @@ class HealthController extends Controller
             $storageStatus = 'STORAGE_ERROR';
         }
 
+        $queueDriver = (string) config('queue.default', 'sync');
+        $queueHealthy = in_array($queueDriver, ['redis', 'database', 'sync'], true)
+            && ($queueDriver !== 'redis' || $redisHealthy)
+            && ($queueDriver !== 'database' || $dbHealthy);
+        $queueStatus = $queueHealthy ? 'OPERATIONAL' : 'DEGRADED';
+
         return [
             'database' => ['healthy' => $dbHealthy, 'status' => $dbStatus],
             'cache_redis' => ['healthy' => $redisHealthy, 'status' => $redisStatus],
             'private_storage' => ['healthy' => $storageHealthy, 'status' => $storageStatus],
+            'queue' => ['healthy' => $queueHealthy, 'status' => $queueStatus],
         ];
     }
 }

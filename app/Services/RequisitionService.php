@@ -6,6 +6,7 @@ use App\Models\Requisition;
 use App\Models\RequisitionApproval;
 use App\Models\RequisitionVersion;
 use App\Models\User;
+use App\Support\ApiClientPrincipal;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -17,12 +18,15 @@ class RequisitionService
         private readonly AuditService $audit
     ) {}
 
-    public function createRequisition(array $data, User $actor): Requisition
+    public function createRequisition(array $data, User|ApiClientPrincipal $actor): Requisition
     {
-        $tenantId = $this->context->getActiveTenantId();
+        $tenantId = $this->context->getActiveTenantId() ?? ($actor instanceof ApiClientPrincipal ? $actor->getTenantId() : $actor->current_tenant_id);
+        $actorUserId = $actor instanceof User ? (int) $actor->id : null;
+        $actorType = $actor instanceof ApiClientPrincipal ? $actor->getActorType() : 'USER';
+        $actorIdentifier = $actor instanceof ApiClientPrincipal ? $actor->getActorIdentifier() : $actor->email;
 
-        return DB::transaction(function () use ($data, $actor, $tenantId) {
-            $nextNumber = 'REQ-'.date('Y').'-'.str_pad((string) (Requisition::count() + 101), 4, '0', STR_PAD_LEFT);
+        return DB::transaction(function () use ($data, $actor, $tenantId, $actorUserId, $actorType, $actorIdentifier) {
+            $nextNumber = 'REQ-'.date('Y').'-'.str_pad((string) (Requisition::withoutGlobalScopes()->where('tenant_id', $tenantId)->count() + 101), 4, '0', STR_PAD_LEFT);
 
             $req = Requisition::create([
                 'tenant_id' => $tenantId,
@@ -31,9 +35,9 @@ class RequisitionService
                 'department_id' => $data['department_id'],
                 'location_id' => $data['location_id'],
                 'legal_entity_id' => $data['legal_entity_id'],
-                'hiring_manager_user_id' => $data['hiring_manager_user_id'] ?? $actor->id,
+                'hiring_manager_user_id' => $data['hiring_manager_user_id'] ?? $actorUserId,
                 'recruiter_user_id' => $data['recruiter_user_id'] ?? null,
-                'created_by_user_id' => $actor->id,
+                'created_by_user_id' => $actorUserId,
                 'headcount' => (int) ($data['headcount'] ?? 1),
                 'filled_headcount' => 0,
                 'employment_type' => $data['employment_type'] ?? 'FULL_TIME',
@@ -60,7 +64,11 @@ class RequisitionService
                     'requisition_number' => $req->requisition_number,
                     'status' => $req->status,
                     'version' => $req->current_version,
-                ]
+                ],
+                tenantId: (int) $tenantId,
+                actorUserId: $actorUserId,
+                actorType: $actorType,
+                actorIdentifier: $actorIdentifier,
             );
 
             return $req;
@@ -308,7 +316,7 @@ class RequisitionService
         });
     }
 
-    private function recordVersion(Requisition $req, User $actor, string $summary): RequisitionVersion
+    private function recordVersion(Requisition $req, User|ApiClientPrincipal $actor, string $summary): RequisitionVersion
     {
         return RequisitionVersion::create([
             'tenant_id' => $req->tenant_id,
@@ -328,7 +336,7 @@ class RequisitionService
                 'justification' => $req->justification,
             ],
             'change_summary' => $summary,
-            'created_by_user_id' => $actor->id,
+            'created_by_user_id' => $actor instanceof User ? $actor->id : null,
             'created_at' => now(),
         ]);
     }
