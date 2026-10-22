@@ -9,6 +9,47 @@ use LogicException;
 
 class Tenant extends Model
 {
+    public const RESERVED_SLUGS = [
+        'login',
+        'logout',
+        'auth',
+        'register',
+        'password',
+        'careers',
+        'jobs',
+        'applications',
+        'candidates',
+        'documents',
+        'requisitions',
+        'evaluations',
+        'offers',
+        'hr-handover',
+        'analytics',
+        'organization',
+        'dashboard',
+        'tenant',
+        'admin',
+        'platformadmin',
+        'platform-admin',
+        'ai',
+        'integrations',
+        'webhooks',
+        'api',
+        'mcp',
+        'health',
+        'up',
+        'setup',
+        'system',
+        'sitemap',
+        'sitemap.xml',
+        'robots',
+        'robots.txt',
+        'storage',
+        'build',
+        'vendor',
+        'favicon.ico',
+    ];
+
     protected $fillable = [
         'uuid',
         'slug',
@@ -53,11 +94,17 @@ class Tenant extends Model
                 $tenant->uuid = (string) Str::uuid();
             }
 
-            if (empty($tenant->slug) || ! preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', strtolower(trim((string) $tenant->slug)))) {
+            $normalizedSlug = strtolower(trim((string) $tenant->slug));
+
+            if ($normalizedSlug === '' || ! preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $normalizedSlug)) {
                 throw new LogicException('TENANT_SLUG_REQUIRED: A valid tenant slug is required at creation.');
             }
 
-            $tenant->slug = strtolower(trim((string) $tenant->slug));
+            if (in_array($normalizedSlug, self::RESERVED_SLUGS, true)) {
+                throw new LogicException('TENANT_SLUG_RESERVED: The requested tenant slug conflicts with a reserved platform route.');
+            }
+
+            $tenant->slug = $normalizedSlug;
         });
 
         static::updating(function (Tenant $tenant) {

@@ -22,9 +22,15 @@ class AuthController extends Controller
     public function showLogin(EntraSsoService $entraSso): View|RedirectResponse
     {
         if (Auth::check()) {
+            /** @var User|null $authenticatedUser */
             $authenticatedUser = Auth::user();
-
-            return redirect()->route($authenticatedUser && $authenticatedUser->isActivePlatformAdmin() ? 'platform-admin.index' : 'organization.home');
+            if ($authenticatedUser && $authenticatedUser->isActivePlatformAdmin()) {
+                return redirect()->route('platform-admin.index');
+            }
+            if ($authenticatedUser && $authenticatedUser->isActiveAccount() && app(TenantContextService::class)->resolveForAuthenticatedUser($authenticatedUser) !== null) {
+                return redirect()->route('organization.home');
+            }
+            Auth::logout();
         }
 
         $demoPersonas = [];
@@ -138,8 +144,31 @@ class AuthController extends Controller
 
         /** @var User $user */
         $user = Auth::user();
-        $user->forceFill(['last_login_at' => now()])->saveQuietly();
         $tenant = $context->resolveForAuthenticatedUser($user);
+        $isPlatformAdmin = $user->isActivePlatformAdmin();
+
+        if (! $isPlatformAdmin && $tenant === null) {
+            $audit->record(
+                module: 'auth',
+                action: 'login_blocked_no_active_tenant_membership',
+                outcome: 'DENIED',
+                errorCode: 'TENANT_MEMBERSHIP_REQUIRED',
+                entityType: 'User',
+                entityId: (string) $user->id,
+                actorIdentifier: $user->email,
+                actorUserId: $user->id,
+            );
+
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return back()->withErrors([
+                'email' => 'TENANT_MEMBERSHIP_REQUIRED: Your account does not have an active organization membership.',
+            ])->onlyInput('email');
+        }
+
+        $user->forceFill(['last_login_at' => now()])->saveQuietly();
 
         $audit->record(
             module: 'auth',
@@ -158,7 +187,6 @@ class AuthController extends Controller
         );
 
         // Namespace is selected from the authenticated platform authority, never from an untrusted intended URL.
-        $isPlatformAdmin = $user->isActivePlatformAdmin();
         $defaultRedirect = $isPlatformAdmin ? route('platform-admin.index') : route('organization.home');
 
         return redirect()->to($defaultRedirect)

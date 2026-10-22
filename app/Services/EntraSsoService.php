@@ -231,7 +231,7 @@ class EntraSsoService
      */
     public function isLocalPasswordLoginBlockedForUser(User $user): bool
     {
-        if ($user->is_platform_superadmin) {
+        if ($user->isActivePlatformAdmin()) {
             return false;
         }
 

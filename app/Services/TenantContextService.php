@@ -100,8 +100,11 @@ class TenantContextService
             }
         }
 
-        // Fall back to first active membership if current_tenant_id is unset or no longer active
-        $firstMembership = $user->memberships()->where('status', 'ACTIVE')->first();
+        // Fall back to first active membership in an active tenant if current_tenant_id is unset or no longer active
+        $firstMembership = $user->memberships()
+            ->where('status', 'ACTIVE')
+            ->whereHas('tenant', fn ($q) => $q->where('status', 'ACTIVE'))
+            ->first();
         if ($firstMembership) {
             $tenant = Tenant::where('id', $firstMembership->tenant_id)->where('status', 'ACTIVE')->first();
             if ($tenant) {

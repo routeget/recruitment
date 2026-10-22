@@ -55,6 +55,7 @@ class CareerPortalController extends Controller
         $tenant = Tenant::where('slug', $tenantSlug)->where('status', 'ACTIVE')->firstOrFail();
         // The path is authoritative; a query-string tenant must not switch the portal context.
         $request->query->set('tenant', $tenant->slug);
+        $request->merge(['tenant' => $tenant->slug]);
 
         return $this->index($request)->with('tenant', $tenant);
     }
@@ -138,6 +139,7 @@ class CareerPortalController extends Controller
     {
         $jobs = JobPosting::withoutTenantScope()
             ->with('tenant')
+            ->whereHas('tenant', fn ($tenantQuery) => $tenantQuery->where('status', 'ACTIVE'))
             ->where('status', JobPosting::STATUS_PUBLISHED)
             ->where(function ($q) {
                 $q->whereNull('expires_at')->orWhere('expires_at', '>', now());

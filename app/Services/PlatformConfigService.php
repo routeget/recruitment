@@ -231,14 +231,14 @@ class PlatformConfigService
         'security.require_mfa_for_platform_admins' => [
             'section' => 'security',
             'label' => 'Require MFA Enrollment for Platform Super Admins',
-            'description' => 'Enforces server-side check that any Platform Super Admin has mfa_enabled = true before accessing /platform-admin.',
+            'description' => 'Enforces server-side check that any Platform Admin has mfa_enabled = true before accessing /platformadmin.',
             'type' => 'boolean',
             'default' => true,
             'rules' => ['required', 'boolean'],
             'classification' => 'PLATFORM_DB_SETTING',
             'sensitivity' => 'SENSITIVE_GOVERNANCE',
             'requires_reason' => true,
-            'consumer' => 'RequirePlatformSuperAdmin::handle',
+            'consumer' => 'RequirePlatformAdmin::handle, RequirePlatformSuperAdmin::handle',
             'restart_requirement' => 'Immediate runtime effect',
         ],
         'security.require_step_up_for_sensitive_changes' => [

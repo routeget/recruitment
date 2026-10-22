@@ -175,8 +175,7 @@ class PlatformAdminController extends Controller
             abort(404, 'Unknown configuration section.');
         }
 
-        /** @var User $actor */
-        $actor = Auth::user();
+        $actor = $this->requireSuperAdmin("update_section:{$section}");
         $rawSettings = (array) $request->input('settings', []);
         $reason = $request->input('reason');
         $expectedVersions = (array) $request->input('expected_versions', []);
@@ -206,7 +205,7 @@ class PlatformAdminController extends Controller
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'min:3', 'max:160'],
-            'slug' => ['required', 'string', 'min:3', 'max:80', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', 'not_in:login,logout,platformadmin,platform-admin,organization,dashboard,careers,health,setup,system,admin,integrations,api,auth,mcp,tenant,sitemap,robots,requisitions,jobs,candidates,documents,applications,evaluations,analytics,offers,hr-handover,ai,webhooks', 'unique:tenants,slug'],
+            'slug' => ['required', 'string', 'min:3', 'max:80', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', 'not_in:'.implode(',', Tenant::RESERVED_SLUGS), 'unique:tenants,slug'],
             'primary_domain' => ['nullable', 'string', 'max:190', 'unique:tenants,primary_domain'],
             'default_timezone' => ['nullable', 'timezone:all'],
             'default_currency' => ['nullable', 'string', 'in:USD,GBP,EUR,AED,INR'],
@@ -223,8 +222,7 @@ class PlatformAdminController extends Controller
 
     public function updateTenantLifecycle(Request $request, Tenant $tenant): RedirectResponse
     {
-        /** @var User $actor */
-        $actor = Auth::user();
+        $actor = $this->requireSuperAdmin('update_tenant_lifecycle');
 
         $validated = $request->validate([
             'status' => ['required', 'string', 'in:ACTIVE,SUSPENDED'],
@@ -248,8 +246,7 @@ class PlatformAdminController extends Controller
 
     public function promoteAdmin(Request $request): RedirectResponse
     {
-        /** @var User $actor */
-        $actor = Auth::user();
+        $actor = $this->requireSuperAdmin('promote_admin');
 
         $validated = $request->validate([
             'email' => ['required', 'email', 'max:190'],
@@ -283,8 +280,7 @@ class PlatformAdminController extends Controller
 
     public function revokeAdmin(Request $request, User $targetUser): RedirectResponse
     {
-        /** @var User $actor */
-        $actor = Auth::user();
+        $actor = $this->requireSuperAdmin('revoke_admin');
 
         $validated = $request->validate([
             'reason' => ['required', 'string', 'min:10', 'max:500'],
@@ -315,8 +311,7 @@ class PlatformAdminController extends Controller
 
     public function updateApiClientStatus(Request $request, int $clientId): RedirectResponse
     {
-        /** @var User $actor */
-        $actor = Auth::user();
+        $actor = $this->requireSuperAdmin('update_api_client_status');
 
         $validated = $request->validate([
             'is_active' => ['required', 'boolean'],
@@ -334,8 +329,7 @@ class PlatformAdminController extends Controller
 
     public function updateWebhookStatus(Request $request, int $subscriptionId): RedirectResponse
     {
-        /** @var User $actor */
-        $actor = Auth::user();
+        $actor = $this->requireSuperAdmin('update_webhook_status');
 
         $validated = $request->validate([
             'is_active' => ['required', 'boolean'],
@@ -407,6 +401,28 @@ class PlatformAdminController extends Controller
         return redirect()
             ->route('platform-admin.index', ['tab' => 'security'])
             ->with('status', 'Your Platform Super Admin password has been rotated and your session has been regenerated.');
+    }
+
+    private function requireSuperAdmin(string $operation): User
+    {
+        /** @var User|null $actor */
+        $actor = Auth::user();
+        if (! $actor || ! $actor->isActivePlatformSuperAdmin()) {
+            $this->auditService->record(
+                module: 'platform_admin',
+                action: 'platform_admin.superadmin_required',
+                outcome: 'DENIED',
+                errorCode: 'PLATFORM_SUPERADMIN_REQUIRED',
+                entityType: 'User',
+                entityId: $actor ? (string) $actor->id : null,
+                metadata: ['operation' => $operation],
+                actorUserId: $actor?->id,
+            );
+
+            abort(403, 'PLATFORM_SUPERADMIN_REQUIRED: Platform Super Admin authority is required for this operation.');
+        }
+
+        return $actor;
     }
 
     private function assertStepUpPasswordIfRequired(User $actor, string $currentPassword, string $operation): void
