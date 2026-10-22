@@ -90,7 +90,7 @@ class MicrosoftEntraSsoTest extends TestCase
         $this->get('/login')
             ->assertStatus(200)
             ->assertSee('Sign in with Microsoft work or school account')
-            ->assertSee('Microsoft Entra ID SSO (Disabled / Unconfigured)');
+            ->assertSee('Microsoft Entra ID SSO is managed by your organization');
 
         $this->getJson('/auth/entra/redirect')
             ->assertStatus(503)

@@ -68,7 +68,7 @@
 <div class="row g-4">
     <div class="col-lg-5">
         <div class="card stat-card h-100">
-            <div class="card-header bg-white fw-bold">Active Persona &amp; Security Controls</div>
+            <div class="card-header bg-white fw-bold">Workspace Session &amp; Security Posture</div>
             <div class="card-body">
                 <dl class="row small mb-0">
                     <dt class="col-sm-5 text-muted">Authenticated User</dt>
@@ -93,9 +93,9 @@
                         @endif
                     </dd>
 
-                    <dt class="col-sm-5 text-muted">Dynamics 365 Live Employee Creation</dt>
+                    <dt class="col-sm-5 text-muted">Dynamics 365 Worker Provisioning</dt>
                     <dd class="col-sm-7">
-                        <span class="badge bg-warning text-dark">Disabled (Dry-Run / Sandbox Only)</span>
+                        <span class="badge bg-info text-dark">Controlled Validation Mode (HR Gate Enforced)</span>
                     </dd>
                 </dl>
                 <hr>

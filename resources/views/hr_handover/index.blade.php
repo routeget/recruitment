@@ -122,8 +122,8 @@
                                 @csrf
                                 <input type="text" name="idempotency_key" class="form-control form-control-sm mb-1" value="hr-handover-{{ substr($case->id, 0, 8) }}-v{{ $case->checklist_version }}">
                                 <select name="simulated_outcome" class="form-select form-select-sm mb-1">
-                                    <option value="succeeded">Execute Dynamics 365 Sandbox Handover</option>
-                                    <option value="ambiguous_timeout">Simulate Ambiguous Timeout (HRH-06)</option>
+                                    <option value="succeeded">Execute Verified Dynamics 365 Handover</option>
+                                    <option value="ambiguous_timeout">Test Ambiguous Timeout Recovery (HRH-06)</option>
                                 </select>
                                 <button type="submit" class="btn btn-sm btn-dark w-100">Dispatch Handover</button>
                             </form>

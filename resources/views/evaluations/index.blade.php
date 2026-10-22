@@ -140,7 +140,7 @@
                     </div>
                     <div class="mb-2">
                         <label for="strengths_evidence" class="form-label small fw-semibold">Job-Related Evidence</label>
-                        <input type="text" id="strengths_evidence" name="strengths_evidence" class="form-control form-control-sm" required value="Demonstrated strong transactional outbox and security design.">
+                        <input type="text" id="strengths_evidence" name="strengths_evidence" class="form-control form-control-sm" required placeholder="Summarize verified job-related technical and behavioral evidence...">
                     </div>
                     <button type="submit" class="btn btn-sm btn-success w-100">Submit Structured Scorecard</button>
                 </form>

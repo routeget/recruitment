@@ -82,21 +82,12 @@ class QuickBookErpThemeSidebarLoginTest extends TestCase
         // 3. Verify no hardcoded demo password literal is exposed in HTML source
         $this->assertStringNotContainsString('AlphaDemo#2026!', $html);
 
-        // 4. In testing environment, synthetic demo persona selector is available
-        $this->assertStringContainsString('Development Demo Personas (Non-Production Only)', $html);
-        $this->assertStringContainsString('admin@acme-demo.test', $html);
-
-        // 5. In production environment, demo personas are strictly suppressed
-        $originalEnv = app()->environment();
-        try {
-            app()->detectEnvironment(fn () => 'production');
-            $prodHtml = (string) $this->get('/login')->assertOk()->getContent();
-            $this->assertStringNotContainsString('Development Demo Personas', $prodHtml);
-            $this->assertStringNotContainsString('admin@acme-demo.test', $prodHtml);
-            $this->assertStringNotContainsString('platform.superadmin@tringers.test', $prodHtml);
-        } finally {
-            app()->detectEnvironment(fn () => $originalEnv);
-        }
+        // 4. Verify synthetic demo persona tables and test account rosters are never rendered on the user-facing login screen in any environment
+        $this->assertStringNotContainsString('Development Demo Personas', $html);
+        $this->assertStringNotContainsString('DEMO ONLY', $html);
+        $this->assertStringNotContainsString('admin@acme-demo.test', $html);
+        $this->assertStringNotContainsString('platform.superadmin@tringers.test', $html);
+        $this->assertStringNotContainsString('MICROSOFT_ENTRA_CLIENT_ID', $html);
     }
 
     public function test_sidebar_shell_collapsible_groups_active_states_and_authorization_visibility(): void

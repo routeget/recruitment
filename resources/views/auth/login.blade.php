@@ -95,7 +95,7 @@
 
                 @if($errors->any())
                     <div class="alert alert-danger py-2 px-3 small" role="alert">
-                        <div class="fw-bold mb-1">Validation Error (`VALIDATION_ERROR`)</div>
+                        <div class="fw-bold mb-1">Unable to complete sign-in</div>
                         <ul class="mb-0 ps-3">
                             @foreach($errors->all() as $err)
                                 <li>{{ $err }}</li>
@@ -117,15 +117,15 @@
                             <span>Sign in with Microsoft work or school account</span>
                         </a>
                         <div class="text-muted small text-center mt-1">
-                            Microsoft Entra ID OIDC + PKCE (<code>{{ $entraTenantMode ?? 'organizations' }}</code> audience)
+                            Enterprise Single Sign-On via Microsoft Entra ID
                         </div>
                     @else
                         <button type="button" class="btn btn-outline-secondary w-100 fw-semibold py-2" disabled aria-disabled="true">
                             Sign in with Microsoft work or school account
                         </button>
-                        <div class="alert alert-secondary py-2 px-3 mt-2 mb-0 small">
-                            <strong>Microsoft Entra ID SSO (Disabled / Unconfigured):</strong>
-                            Organizational OIDC + PKCE S256 (`organizations` audience) is implemented and enforced, but external Entra app registration credentials (<code>MICROSOFT_ENTRA_CLIENT_ID</code>) are not enabled in this environment.
+                        <div class="alert alert-light border py-2 px-3 mt-2 mb-0 small text-secondary">
+                            <strong>Enterprise Single Sign-On:</strong>
+                            Microsoft Entra ID SSO is managed by your organization's identity administrator. Please sign in below with your workspace credentials.
                         </div>
                     @endif
                 </div>
@@ -152,54 +152,8 @@
                         <label class="form-check-label small" for="remember">Keep session active</label>
                     </div>
 
-                    <button type="submit" class="btn btn-primary w-100 fw-semibold py-2">Authenticate</button>
+                    <button type="submit" class="btn btn-primary w-100 fw-semibold py-2">Sign In</button>
                 </form>
-
-                <!-- Strictly Gated Development/Testing Synthetic Persona Selector (Never Rendered in Production) -->
-                @if(app()->environment(['local', 'testing']) && !empty($demoPersonas) && count($demoPersonas) > 0)
-                    <details class="mt-4 border rounded p-3 bg-light">
-                        <summary class="fw-semibold small d-flex justify-content-between align-items-center" style="cursor: pointer;">
-                            <span>Development Demo Personas (Non-Production Only)</span>
-                            <span class="badge bg-info text-dark">DEMO ONLY</span>
-                        </summary>
-                        <div class="mt-2">
-                            <p class="small text-muted mb-2">
-                                Available only in local/testing environments to verify RBAC, ABAC, and cross-tenant isolation.
-                            </p>
-                            <div class="table-responsive">
-                                <table class="table table-sm table-hover align-middle mb-0">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>Persona</th>
-                                            <th>Tenant / Role</th>
-                                            <th>Select</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach($demoPersonas as $dp)
-                                            <tr>
-                                                <td>
-                                                    <div class="fw-semibold small">{{ $dp->name }}</div>
-                                                    <code class="small">{{ $dp->email }}</code>
-                                                </td>
-                                                <td>
-                                                    <div class="small">{{ $dp->currentTenant?->name ?? 'Global Platform' }}</div>
-                                                    <span class="badge bg-secondary">{{ $dp->memberships->first()?->role?->slug ?? $dp->platform_role }}</span>
-                                                </td>
-                                                <td>
-                                                    <button type="button" class="btn btn-sm btn-outline-primary"
-                                                        onclick="var e=document.getElementById('email'),p=document.getElementById('password');if(e){e.value='{{ $dp->email }}';}if(p){p.focus();}">
-                                                        Use Email
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        @endforeach
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </details>
-                @endif
 
                 <!-- Normal-Flow Legal & Operational Footer (Never Overlaps Form on Short Screens) -->
                 <div class="mt-4 pt-3 border-top small text-muted">

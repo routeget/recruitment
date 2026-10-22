@@ -44,7 +44,7 @@ class CareerPortalAndApplicationLifecycleTest extends TestCase
         // Public portal lists published job and hides draft job
         $portalResp = $this->get('/careers');
         $portalResp->assertStatus(200)
-            ->assertSee('Senior AI Platform Architect (Demo)')
+            ->assertSee('Senior AI Platform Architect')
             ->assertDontSee('Unpublished Secret Draft Role');
 
         // Direct access to draft job on public portal returns 404

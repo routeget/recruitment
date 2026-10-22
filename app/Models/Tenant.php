@@ -44,6 +44,7 @@ class Tenant extends Model
         'sitemap.xml',
         'robots',
         'robots.txt',
+        'legal',
         'storage',
         'build',
         'vendor',

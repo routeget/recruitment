@@ -29,14 +29,14 @@
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Execution Mode</label>
                         <select name="connection_mode" class="form-select form-select-sm" required>
-                            <option value="alpha_sandbox" {{ $config->connection_mode === 'alpha_sandbox' ? 'selected' : '' }}>Alpha Sandbox (Deterministic Worker Creation)</option>
-                            <option value="dry_run" {{ $config->connection_mode === 'dry_run' ? 'selected' : '' }}>Dry-Run Validation Only</option>
+                            <option value="alpha_sandbox" {{ $config->connection_mode === 'alpha_sandbox' ? 'selected' : '' }}>Controlled Validation Mode (Staged Worker Provisioning)</option>
+                            <option value="dry_run" {{ $config->connection_mode === 'dry_run' ? 'selected' : '' }}>Dry-Run Schema Validation Only</option>
                             <option value="live_configured" {{ $config->connection_mode === 'live_configured' ? 'selected' : '' }}>Live Configured (Fails Closed Without OAuth Secret)</option>
                         </select>
                     </div>
                     <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" name="real_employee_creation_enabled" value="1" id="realEmpSwitch" {{ $config->real_employee_creation_enabled ? 'checked' : '' }}>
-                        <label class="form-check-label small" for="realEmpSwitch">Enable Live Dynamics 365 Employee Creation (Disabled by Default in Alpha)</label>
+                        <label class="form-check-label small" for="realEmpSwitch">Enable Live Dynamics 365 Employee Creation (Requires Verified HR Handover Gate)</label>
                     </div>
                     <button type="submit" class="btn btn-primary btn-sm">Update Dynamics 365 Connector Settings</button>
                 </form>

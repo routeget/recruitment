@@ -50,7 +50,7 @@ class TenantIsolationAndAuthTest extends TestCase
 
         $dashboard = $this->get('/dashboard');
         $dashboard->assertStatus(200)
-            ->assertSee('Acme Global Tech (Demo)')
+            ->assertSee('Acme Global Tech')
             ->assertSee('tenant_admin');
     }
 
@@ -120,20 +120,20 @@ class TenantIsolationAndAuthTest extends TestCase
         $root = $this->get('/');
         $root->assertOk()
             ->assertSee('Explore Approved Open Positions')
-            ->assertSee('Senior AI Platform Architect (Demo)')
+            ->assertSee('Senior AI Platform Architect')
             ->assertSee('Globex Principal Cloud Engineer');
 
         $careers = $this->get('/careers');
         $careers->assertOk()
             ->assertSee('Explore Approved Open Positions')
-            ->assertSee('Senior AI Platform Architect (Demo)')
+            ->assertSee('Senior AI Platform Architect')
             ->assertSee('Globex Principal Cloud Engineer');
 
         // Tenant portal shows only acme-demo vacancies, even if ?tenant=globex-demo is passed in query string
         $tenantPortal = $this->get('/acme-demo?tenant=globex-demo');
         $tenantPortal->assertOk()
-            ->assertSee('Explore Open Positions at Acme Global Tech (Demo)')
-            ->assertSee('Senior AI Platform Architect (Demo)')
+            ->assertSee('Explore Open Positions at Acme Global Tech')
+            ->assertSee('Senior AI Platform Architect')
             ->assertDontSee('Globex Principal Cloud Engineer');
 
         // Job detail scoping: acme job on acme-demo works, on globex-demo returns 404

@@ -50,6 +50,8 @@ class AlphaSafeBootstrapSeeder extends Seeder
             ['slug' => 'dynamics.admin', 'name' => 'Configure Dynamics 365 Finance HR Connector', 'module' => 'dynamics'],
             ['slug' => 'reports.view', 'name' => 'View Recruitment & Operational Analytics', 'module' => 'analytics'],
             ['slug' => 'audit.view', 'name' => 'View Append-Only Security & Compliance Audit Trail', 'module' => 'audit'],
+            ['slug' => 'career_portal.configure', 'name' => 'Configure Career Portal', 'module' => 'career_portal'],
+            ['slug' => 'career_portal.publish', 'name' => 'Publish Career Portal Configuration', 'module' => 'career_portal'],
         ];
 
         $permissionMap = [];
@@ -65,7 +67,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
             'platform_superadmin' => [
                 'name' => 'Platform Superadmin',
                 'description' => 'Platform configuration, tenant lifecycle, provider health. Scoped support access only.',
-                'permissions' => ['iam.manage', 'ai.admin', 'api.admin', 'dynamics.admin', 'reports.view', 'audit.view'],
+                'permissions' => ['iam.manage', 'ai.admin', 'api.admin', 'dynamics.admin', 'reports.view', 'audit.view', 'career_portal.configure', 'career_portal.publish'],
             ],
             'tenant_admin' => [
                 'name' => 'Tenant Owner / Admin',
@@ -154,7 +156,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
             $tenantA = Tenant::updateOrCreate(
                 ['slug' => 'acme-demo'],
                 [
-                    'name' => 'Acme Global Tech (Demo)',
+                    'name' => 'Acme Global Tech',
                     'primary_domain' => 'acme.career.tringers.com',
                     'default_timezone' => 'UTC',
                     'default_currency' => 'USD',
@@ -174,7 +176,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
             $tenantB = Tenant::updateOrCreate(
                 ['slug' => 'globex-demo'],
                 [
-                    'name' => 'Globex Healthcare Systems (Demo)',
+                    'name' => 'Globex Healthcare Systems',
                     'primary_domain' => 'globex.career.tringers.com',
                     'default_timezone' => 'Europe/London',
                     'default_currency' => 'GBP',
@@ -194,56 +196,56 @@ class AlphaSafeBootstrapSeeder extends Seeder
             $demoUsers = [
                 [
                     'email' => 'admin@acme-demo.test',
-                    'name' => 'Alice Vance (Acme Tenant Admin)',
+                    'name' => 'Alice Vance',
                     'tenant' => $tenantA,
                     'role' => 'tenant_admin',
                     'superadmin' => false,
                 ],
                 [
                     'email' => 'recruiter@acme-demo.test',
-                    'name' => 'Marcus Chen (Acme Recruiter)',
+                    'name' => 'Marcus Chen',
                     'tenant' => $tenantA,
                     'role' => 'recruiter',
                     'superadmin' => false,
                 ],
                 [
                     'email' => 'manager@acme-demo.test',
-                    'name' => 'Elena Rostova (Acme Hiring Manager)',
+                    'name' => 'Elena Rostova',
                     'tenant' => $tenantA,
                     'role' => 'hiring_manager',
                     'superadmin' => false,
                 ],
                 [
                     'email' => 'hr.validator@acme-demo.test',
-                    'name' => 'David Patel (Acme HR Validator)',
+                    'name' => 'David Patel',
                     'tenant' => $tenantA,
                     'role' => 'hr_validator',
                     'superadmin' => false,
                 ],
                 [
                     'email' => 'hr.approver@acme-demo.test',
-                    'name' => 'Sarah Jenkins (Acme HR Handover Approver)',
+                    'name' => 'Sarah Jenkins',
                     'tenant' => $tenantA,
                     'role' => 'hr_approver',
                     'superadmin' => false,
                 ],
                 [
                     'email' => 'auditor@acme-demo.test',
-                    'name' => 'Victor Krum (Acme Compliance Auditor)',
+                    'name' => 'Victor Krum',
                     'tenant' => $tenantA,
                     'role' => 'auditor',
                     'superadmin' => false,
                 ],
                 [
                     'email' => 'admin@globex-demo.test',
-                    'name' => 'Dr. Julian Bashir (Globex Tenant Admin)',
+                    'name' => 'Dr. Julian Bashir',
                     'tenant' => $tenantB,
                     'role' => 'tenant_admin',
                     'superadmin' => false,
                 ],
                 [
                     'email' => 'platform.superadmin@tringers.test',
-                    'name' => 'Platform Superadmin (Scoped Governance)',
+                    'name' => 'Platform Superadmin',
                     'tenant' => $tenantA,
                     'role' => 'platform_superadmin',
                     'superadmin' => true,
@@ -304,7 +306,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                     ['tenant_id' => $tenantA->id, 'code' => 'USMF'],
                     [
                         'uuid' => (string) Str::uuid(),
-                        'name' => 'Acme US Manufacturing & Cloud LLC (Demo)',
+                        'name' => 'Acme US Manufacturing & Cloud LLC',
                         'country_code' => 'US',
                         'currency_code' => 'USD',
                         'dynamics_company_code' => 'USMF',
@@ -341,7 +343,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                     ['tenant_id' => $tenantA->id, 'requisition_number' => 'REQ-2026-0101'],
                     [
                         'uuid' => (string) Str::uuid(),
-                        'title' => 'Senior AI Platform Architect (Demo)',
+                        'title' => 'Senior AI Platform Architect',
                         'department_id' => $acmeDept->id,
                         'location_id' => $acmeLoc->id,
                         'legal_entity_id' => $acmeLe->id,
@@ -371,7 +373,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                     [
                         'tenant_id' => $tenantA->id,
                         'snapshot' => ['title' => $reqA->title, 'budget_reference' => $reqA->budget_reference],
-                        'change_summary' => 'Seeded demo open requisition',
+                        'change_summary' => 'Initial approved requisition baseline',
                         'created_by_user_id' => $createdUsers['recruiter@acme-demo.test']->id,
                         'created_at' => now(),
                     ]
@@ -382,7 +384,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                     ['tenant_id' => $tenantB->id, 'code' => 'GBPM'],
                     [
                         'uuid' => (string) Str::uuid(),
-                        'name' => 'Globex UK Medical Systems Ltd (Demo)',
+                        'name' => 'Globex UK Medical Systems Ltd',
                         'country_code' => 'GB',
                         'currency_code' => 'GBP',
                         'dynamics_company_code' => 'GBPM',
@@ -419,7 +421,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                     ['tenant_id' => $tenantB->id, 'requisition_number' => 'REQ-2026-0901'],
                     [
                         'uuid' => (string) Str::uuid(),
-                        'title' => 'Lead Clinical Systems Engineer (Globex Demo)',
+                        'title' => 'Lead Clinical Systems Engineer',
                         'department_id' => $globexDept->id,
                         'location_id' => $globexLoc->id,
                         'legal_entity_id' => $globexLe->id,
@@ -449,12 +451,13 @@ class AlphaSafeBootstrapSeeder extends Seeder
                             'uuid' => (string) Str::uuid(),
                             'requisition_id' => $reqA->id,
                             'slug' => 'senior-ai-platform-architect-job-2026-0101',
-                            'title' => 'Senior AI Platform Architect (Demo)',
+                            'title' => 'Senior AI Platform Architect',
                             'department_id' => $acmeDept->id,
                             'location_id' => $acmeLoc->id,
                             'employment_type' => 'FULL_TIME',
                             'work_mode' => 'HYBRID',
                             'experience_level' => 'SENIOR',
+                            'category_slug' => 'engineering',
                             'summary' => 'Architect resilient multi-tenant recruitment workflows and AI gateway services.',
                             'responsibilities' => "- Design Laravel 13 modular services\n- Enforce HR handover safety gates and tenant isolation",
                             'qualifications' => "- 6+ years PHP and distributed relational systems\n- Experience with enterprise HR integrations",
@@ -463,6 +466,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                             'compensation_max' => 210000,
                             'currency_code' => 'USD',
                             'show_compensation_publicly' => true,
+                            'is_featured' => true,
                             'status' => JobPosting::STATUS_PUBLISHED,
                             'current_version' => 1,
                             'approved_version' => 1,
@@ -470,7 +474,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                             'approved_at' => now(),
                             'published_at' => now(),
                             'expires_at' => now()->addDays(60),
-                            'seo_title' => 'Senior AI Platform Architect | Acme Global Tech (Demo)',
+                            'seo_title' => 'Senior AI Platform Architect | Acme Global Tech',
                             'seo_description' => 'Join Acme Global Tech as a Senior AI Platform Architect.',
                         ]
                     );
@@ -481,7 +485,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                             'uuid' => (string) Str::uuid(),
                             'candidate_code' => 'CAND-2026-1001',
                             'first_name' => 'Jordan',
-                            'last_name' => 'Taylor (Demo Candidate)',
+                            'last_name' => 'Taylor',
                             'phone' => '+1-555-0199',
                             'location_city' => 'New York',
                             'country_code' => 'US',
@@ -525,12 +529,13 @@ class AlphaSafeBootstrapSeeder extends Seeder
                             'uuid' => (string) Str::uuid(),
                             'requisition_id' => $globexReq->id,
                             'slug' => 'lead-clinical-systems-engineer-job-2026-0901',
-                            'title' => 'Lead Clinical Systems Engineer (Globex Demo)',
+                            'title' => 'Lead Clinical Systems Engineer',
                             'department_id' => $globexDept->id,
                             'location_id' => $globexLoc->id,
                             'employment_type' => 'FULL_TIME',
                             'work_mode' => 'ONSITE',
                             'experience_level' => 'LEAD',
+                            'category_slug' => 'data-analytics',
                             'summary' => 'Lead clinical systems interoperability in London.',
                             'responsibilities' => '- Clinical data pipelines',
                             'qualifications' => '- HL7/FHIR experience',
@@ -539,6 +544,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                             'compensation_max' => 110000,
                             'currency_code' => 'GBP',
                             'show_compensation_publicly' => true,
+                            'is_featured' => true,
                             'status' => JobPosting::STATUS_PUBLISHED,
                             'current_version' => 1,
                             'approved_version' => 1,
@@ -555,7 +561,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                             'uuid' => (string) Str::uuid(),
                             'candidate_code' => 'CAND-2026-9001',
                             'first_name' => 'Clara',
-                            'last_name' => 'Oswald (Globex Demo)',
+                            'last_name' => 'Oswald',
                             'location_city' => 'London',
                             'country_code' => 'GB',
                             'current_title' => 'Clinical Engineer',

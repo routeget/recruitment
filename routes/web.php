@@ -6,6 +6,7 @@ use App\Http\Controllers\ApiV1AndMcpController;
 use App\Http\Controllers\AuditGovernanceController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CandidateAndApplicationController;
+use App\Http\Controllers\CareerPortalConfigurationController;
 use App\Http\Controllers\CareerPortalController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EntraSsoController;
@@ -34,6 +35,10 @@ Route::get('/', [CareerPortalController::class, 'index'])->name('careers.index')
 Route::get('/careers', [CareerPortalController::class, 'index'])->name('careers.legacy-index');
 Route::get('/careers/{tenantSlug}/jobs/{jobSlug}', [CareerPortalController::class, 'showJob'])->name('careers.legacy-show');
 Route::post('/careers/{tenantSlug}/jobs/{jobSlug}/apply', [CareerPortalController::class, 'submitPublicApplication'])->name('careers.legacy-apply');
+Route::post('/careers/cookie-consent', [CareerPortalController::class, 'saveCookieConsent'])->name('careers.cookie-consent');
+Route::get('/legal/{page}', [CareerPortalController::class, 'legalPage'])
+    ->where('page', 'privacy-policy|terms-of-use|cookie-policy|privacy|terms|cookies')
+    ->name('careers.legal');
 Route::get('/sitemap.xml', [CareerPortalController::class, 'sitemap'])->name('careers.sitemap');
 Route::get('/robots.txt', [CareerPortalController::class, 'robots'])->name('careers.robots');
 
@@ -266,6 +271,15 @@ Route::middleware('auth')->group(function () {
     // Platform Administration & Configuration Centre.
     Route::prefix('platformadmin')->middleware('platform.admin')->name('platform-admin.')->group(function () {
         Route::get('/', [PlatformAdminController::class, 'index'])->name('index');
+        Route::get('/career-portal-configuration', [CareerPortalConfigurationController::class, 'index'])->name('career-portal.index');
+        Route::get('/career-portal-configuration/{section}', [CareerPortalConfigurationController::class, 'index'])->name('career-portal.section');
+        Route::post('/career-portal-configuration/draft', [CareerPortalConfigurationController::class, 'saveDraft'])->name('career-portal.draft.save');
+        Route::post('/career-portal-configuration/validate', [CareerPortalConfigurationController::class, 'validateDraft'])->name('career-portal.draft.validate');
+        Route::post('/career-portal-configuration/reset-default', [CareerPortalConfigurationController::class, 'resetDefault'])->name('career-portal.draft.reset');
+        Route::post('/career-portal-configuration/preview', [CareerPortalConfigurationController::class, 'generatePreview'])->name('career-portal.preview');
+        Route::post('/career-portal-configuration/publish', [CareerPortalConfigurationController::class, 'publish'])->name('career-portal.publish');
+        Route::post('/career-portal-configuration/rollback/{versionNumber}', [CareerPortalConfigurationController::class, 'rollback'])->name('career-portal.rollback');
+        Route::post('/career-portal-configuration/assets', [CareerPortalConfigurationController::class, 'uploadAsset'])->name('career-portal.assets.upload');
         Route::get('/integrations/api', [PlatformAdminController::class, 'index'])->defaults('section', 'api-mcp')->name('integrations.api');
         Route::get('/integrations/dynamics', [PlatformAdminController::class, 'index'])->defaults('section', 'integrations')->name('integrations.dynamics');
         Route::get('/system/diagnostics', [HealthController::class, 'diagnosticsPage'])->name('system.diagnostics');

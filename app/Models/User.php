@@ -76,8 +76,56 @@ class User extends Authenticatable
     {
         return $this->isActiveAccount() && (
             $this->isActivePlatformSuperAdmin()
-            || in_array(strtolower((string) $this->platform_role), ['platform_admin', 'platform_super_admin', 'platform_superadmin'], true)
+            || in_array(strtolower((string) $this->platform_role), [
+                'platform_admin',
+                'platform_super_admin',
+                'platform_superadmin',
+                'platform_portal_editor',
+                'platform_portal_publisher',
+            ], true)
         );
+    }
+
+    public function canConfigureCareerPortal(): bool
+    {
+        if (! $this->isActivePlatformAdmin()) {
+            return false;
+        }
+
+        if ($this->isActivePlatformSuperAdmin()) {
+            return true;
+        }
+
+        $role = strtolower((string) $this->platform_role);
+        if (in_array($role, ['platform_portal_editor', 'platform_portal_publisher'], true)) {
+            return true;
+        }
+
+        return $this->memberships()
+            ->where('status', 'ACTIVE')
+            ->whereHas('role.permissions', fn ($q) => $q->whereIn('slug', ['career_portal.configure', 'career_portal.publish']))
+            ->exists();
+    }
+
+    public function canPublishCareerPortal(): bool
+    {
+        if (! $this->isActivePlatformAdmin()) {
+            return false;
+        }
+
+        if ($this->isActivePlatformSuperAdmin()) {
+            return true;
+        }
+
+        $role = strtolower((string) $this->platform_role);
+        if ($role === 'platform_portal_publisher') {
+            return true;
+        }
+
+        return $this->memberships()
+            ->where('status', 'ACTIVE')
+            ->whereHas('role.permissions', fn ($q) => $q->where('slug', 'career_portal.publish'))
+            ->exists();
     }
 
     public function isSyntheticDemoIdentity(): bool

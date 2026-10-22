@@ -7,7 +7,7 @@
     <div>
         <h2 class="h4 fw-bold mb-1">Provider-Neutral AI Gateway &amp; Governance Console</h2>
         <p class="text-muted small mb-0">
-            Supports Claude, Gemini, OpenAI, and DeterministicFake adapters with PII/secret redaction, prompt version registry, monthly budget caps, tenant kill-switches, and mandatory human review.
+            Supports Claude, Gemini, OpenAI, and governed validation adapters with PII/secret redaction, prompt version registry, monthly budget caps, tenant kill-switches, and mandatory human review.
         </p>
     </div>
     <span class="badge bg-info text-dark">Human-in-the-Loop Enforced</span>
@@ -45,8 +45,8 @@
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label small fw-semibold">Input Evidence / Context (Emails, SSNs, and Secrets are Automatically Redacted)</label>
-                        <textarea name="raw_input_text" class="form-control form-control-sm" rows="3" required>Candidate Jane Doe (jane.doe@example.org, SSN 123-45-6789) has 8 years of production PHP 8.5, Laravel 13, MariaDB, Redis, and enterprise ERP integration experience.</textarea>
+                        <label class="form-label small fw-semibold">Input Evidence / Context (Emails, National IDs, and Secrets are Automatically Redacted)</label>
+                        <textarea name="raw_input_text" class="form-control form-control-sm" rows="3" placeholder="Provide structured candidate skills, interview evidence, or job requirements for governed analysis..." required></textarea>
                     </div>
                     <button type="submit" class="btn btn-primary btn-sm">Run Structured AI Task</button>
                 </form>

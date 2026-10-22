@@ -33,25 +33,7 @@ class AuthController extends Controller
             Auth::logout();
         }
 
-        $demoPersonas = [];
-        if (app()->environment(['local', 'testing'])) {
-            $demoPersonas = User::with(['currentTenant', 'memberships.role'])
-                ->where('status', 'ACTIVE')
-                ->whereIn('email', [
-                    'admin@acme-demo.test',
-                    'recruiter@acme-demo.test',
-                    'manager@acme-demo.test',
-                    'hr.validator@acme-demo.test',
-                    'hr.approver@acme-demo.test',
-                    'auditor@acme-demo.test',
-                    'admin@globex-demo.test',
-                    'platform.superadmin@tringers.test',
-                ])
-                ->get();
-        }
-
         return view('auth.login', [
-            'demoPersonas' => $demoPersonas,
             'entraSsoEnabled' => $entraSso->isEnabled(),
             'entraTenantMode' => (string) config('entra_sso.tenant_mode', 'organizations'),
             'entraConnectionsCount' => ExternalIdentityConnection::withoutGlobalScopes()->where('is_enabled', true)->count(),
