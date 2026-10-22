@@ -274,11 +274,6 @@
                                     </a>
                                 </li>
                             @endif
-                            <li class="nav-item">
-                                <a class="nav-link {{ request()->routeIs('system.diagnostics') ? 'active' : '' }}" href="{{ route('system.diagnostics') }}">
-                                    Operational Diagnostics
-                                </a>
-                            </li>
                         </ul>
                     </div>
                 </nav>
