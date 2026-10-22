@@ -172,7 +172,7 @@ class TenantIsolationAndAuthTest extends TestCase
         ])->assertRedirect();
 
         $this->assertDatabaseHas('tenants', ['slug' => 'codex-test', 'name' => 'Codex Hiring']);
-        $this->get('/codex-test')->assertOk()->assertSee('career.tringers.com/codex-test');
+        $this->get('/codex-test')->assertOk()->assertSee('Explore Open Positions at Codex Hiring');
     }
 
 }
