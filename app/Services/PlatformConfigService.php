@@ -336,6 +336,55 @@ class PlatformConfigService
     }
 
     /**
+     * Validate a CSS hex color token strictly (#RRGGBB) to prevent arbitrary CSS injection.
+     */
+    public static function sanitizeHexColor(mixed $value, string $fallback): string
+    {
+        if (! is_string($value)) {
+            return $fallback;
+        }
+
+        $trimmed = trim($value);
+        if (preg_match('/^#[0-9A-Fa-f]{6}$/', $trimmed) === 1) {
+            return strtoupper($trimmed);
+        }
+
+        return $fallback;
+    }
+
+    /**
+     * Resolve validated Microsoft Dynamics 365 / Fluent enterprise theme tokens.
+     *
+     * @return array<string, string>
+     */
+    public function getThemeTokens(): array
+    {
+        $rawPrimary = config('recruitment.theme.primary_color', '#0078D4');
+        $rawHeaderDark = config('recruitment.theme.header_dark_color', '#002050');
+        $rawHeaderEmphasis = config('recruitment.theme.header_emphasis_color', '#004578');
+
+        return [
+            'primary_actions' => self::sanitizeHexColor($rawPrimary, '#0078D4'),
+            'header_dark' => self::sanitizeHexColor($rawHeaderDark, '#002050'),
+            'header_emphasis' => self::sanitizeHexColor($rawHeaderEmphasis, '#004578'),
+            'surface_main' => '#FFFFFF',
+            'bg_canvas' => '#F5F5F5',
+            'surface_secondary' => '#F1F5F9',
+            'text_main' => '#323130',
+            'text_secondary' => '#605E5C',
+            'text_high_emphasis' => '#201F1E',
+            'disabled_controls' => '#A19F9D',
+            'border_input' => '#D2D0CE',
+            'border_divider' => '#EDEBE9',
+            'hover_bg' => '#F3F9FD',
+            'selected_row_bg' => '#EFF6FC',
+            'selected_control' => '#DEECF9',
+            'success_fg' => '#107C10',
+            'success_bg' => '#DFF6DD',
+        ];
+    }
+
+    /**
      * @return array<string, array<string, mixed>>
      */
     public function getSectionMetadataAndValues(string $section): array

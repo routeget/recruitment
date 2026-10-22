@@ -51,6 +51,7 @@ class EnforceTenantAndSecurityContext
             'brand_code' => $platformConfig->getString('platform.brand_code'),
             'support_email' => $platformConfig->getString('platform.support_email'),
             'career_portal_banner' => $platformConfig->getString('platform.career_portal_banner'),
+            'theme_tokens' => $platformConfig->getThemeTokens(),
         ]);
         View::share('correlationId', $context->getCorrelationId());
 
