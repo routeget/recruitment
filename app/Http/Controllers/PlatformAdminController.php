@@ -206,7 +206,7 @@ class PlatformAdminController extends Controller
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'min:3', 'max:160'],
-            'slug' => ['required', 'string', 'min:3', 'max:80', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', 'not_in:login,logout,platformadmin,organization,dashboard,careers,health,setup,system,admin,integrations,api,auth,mcp,tenant,sitemap,robots', 'unique:tenants,slug'],
+            'slug' => ['required', 'string', 'min:3', 'max:80', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', 'not_in:login,logout,platformadmin,platform-admin,organization,dashboard,careers,health,setup,system,admin,integrations,api,auth,mcp,tenant,sitemap,robots,requisitions,jobs,candidates,documents,applications,evaluations,analytics,offers,hr-handover,ai,webhooks', 'unique:tenants,slug'],
             'primary_domain' => ['nullable', 'string', 'max:190', 'unique:tenants,primary_domain'],
             'default_timezone' => ['nullable', 'timezone:all'],
             'default_currency' => ['nullable', 'string', 'in:USD,GBP,EUR,AED,INR'],
