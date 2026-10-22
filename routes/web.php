@@ -2,14 +2,24 @@
 
 use App\Http\Controllers\AuditGovernanceController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CandidateAndApplicationController;
+use App\Http\Controllers\CareerPortalController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\JobPostingController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\RequisitionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', [HealthController::class, 'jsonHealth'])->name('health');
 Route::get('/setup/status', [AuthController::class, 'setupStatus'])->name('setup.status');
+
+// Increment 3: Public Career Portal, Sitemap & Robots
+Route::get('/careers', [CareerPortalController::class, 'index'])->name('careers.index');
+Route::get('/careers/{tenantSlug}/jobs/{jobSlug}', [CareerPortalController::class, 'showJob'])->name('careers.show');
+Route::post('/careers/{tenantSlug}/jobs/{jobSlug}/apply', [CareerPortalController::class, 'submitPublicApplication'])->name('careers.apply');
+Route::get('/sitemap.xml', [CareerPortalController::class, 'sitemap'])->name('careers.sitemap');
+Route::get('/robots.txt', [CareerPortalController::class, 'robots'])->name('careers.robots');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
@@ -60,6 +70,53 @@ Route::middleware('auth')->group(function () {
     Route::post('/requisitions/{requisition}/transition', [RequisitionController::class, 'transitionState'])
         ->middleware('permission:requisitions.create')
         ->name('requisitions.transition');
+
+    // Increment 3: Job Descriptions & Publishing
+    Route::get('/jobs', [JobPostingController::class, 'index'])
+        ->middleware('permission:jobs.manage')
+        ->name('jobs.index');
+    Route::post('/jobs', [JobPostingController::class, 'store'])
+        ->middleware('permission:jobs.manage')
+        ->name('jobs.store');
+    Route::get('/jobs/{job}', [JobPostingController::class, 'show'])
+        ->middleware('permission:jobs.manage')
+        ->name('jobs.show');
+    Route::post('/jobs/{job}/publish', [JobPostingController::class, 'publish'])
+        ->middleware('permission:jobs.publish')
+        ->name('jobs.publish');
+    Route::post('/jobs/{job}/status', [JobPostingController::class, 'changeStatus'])
+        ->middleware('permission:jobs.publish')
+        ->name('jobs.status');
+
+    // Increment 3: Candidate CRM, Private Documents & Applications
+    Route::get('/candidates', [CandidateAndApplicationController::class, 'candidatesIndex'])
+        ->middleware('permission:candidates.view')
+        ->name('candidates.index');
+    Route::post('/candidates', [CandidateAndApplicationController::class, 'storeCandidate'])
+        ->middleware('permission:candidates.manage')
+        ->name('candidates.store');
+    Route::get('/candidates/{candidate}', [CandidateAndApplicationController::class, 'candidateShow'])
+        ->middleware('permission:candidates.view')
+        ->name('candidates.show');
+    Route::post('/candidates/{candidate}/documents', [CandidateAndApplicationController::class, 'uploadDocument'])
+        ->middleware('permission:candidates.manage')
+        ->name('candidates.documents.upload');
+    Route::get('/documents/{document}/download', [CandidateAndApplicationController::class, 'downloadDocument'])
+        ->middleware('permission:candidates.view')
+        ->name('documents.download');
+
+    Route::get('/applications', [CandidateAndApplicationController::class, 'applicationsIndex'])
+        ->middleware('permission:candidates.view')
+        ->name('applications.index');
+    Route::post('/applications', [CandidateAndApplicationController::class, 'storeApplication'])
+        ->middleware('permission:applications.manage')
+        ->name('applications.store');
+    Route::get('/applications/{application}', [CandidateAndApplicationController::class, 'applicationShow'])
+        ->middleware('permission:candidates.view')
+        ->name('applications.show');
+    Route::post('/applications/{application}/transition', [CandidateAndApplicationController::class, 'transitionApplicationStage'])
+        ->middleware('permission:applications.manage')
+        ->name('applications.transition');
 
     // Increment 1: IAM & Audit
     Route::get('/admin/tenants-iam', [AuditGovernanceController::class, 'iamIndex'])

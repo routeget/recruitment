@@ -2,7 +2,10 @@
 
 namespace Database\Seeders;
 
+use App\Models\Application;
+use App\Models\Candidate;
 use App\Models\Department;
+use App\Models\JobPosting;
 use App\Models\LegalEntity;
 use App\Models\Location;
 use App\Models\Permission;
@@ -393,7 +396,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                     ]
                 );
 
-                Requisition::withoutTenantScope()->updateOrCreate(
+                $globexReq = Requisition::withoutTenantScope()->updateOrCreate(
                     ['tenant_id' => $tenantB->id, 'requisition_number' => 'REQ-2026-0901'],
                     [
                         'uuid' => (string) Str::uuid(),
@@ -419,6 +422,135 @@ class AlphaSafeBootstrapSeeder extends Seeder
                         'approved_at' => now(),
                     ]
                 );
+
+                if (Schema::hasTable('job_postings') && Schema::hasTable('candidates') && Schema::hasTable('applications')) {
+                    $jobA = JobPosting::withoutTenantScope()->updateOrCreate(
+                        ['tenant_id' => $tenantA->id, 'code' => 'JOB-2026-0101'],
+                        [
+                            'uuid' => (string) Str::uuid(),
+                            'requisition_id' => $reqA->id,
+                            'slug' => 'senior-ai-platform-architect-job-2026-0101',
+                            'title' => 'Senior AI Platform Architect (Demo)',
+                            'department_id' => $acmeDept->id,
+                            'location_id' => $acmeLoc->id,
+                            'employment_type' => 'FULL_TIME',
+                            'work_mode' => 'HYBRID',
+                            'experience_level' => 'SENIOR',
+                            'summary' => 'Architect resilient multi-tenant recruitment workflows and AI gateway services.',
+                            'responsibilities' => "- Design Laravel 13 modular services\n- Enforce HR handover safety gates and tenant isolation",
+                            'qualifications' => "- 6+ years PHP and distributed relational systems\n- Experience with enterprise HR integrations",
+                            'skills_required' => ['PHP 8.5', 'Laravel 13', 'MariaDB', 'Redis', 'AI Governance'],
+                            'compensation_min' => 165000,
+                            'compensation_max' => 210000,
+                            'currency_code' => 'USD',
+                            'show_compensation_publicly' => true,
+                            'status' => JobPosting::STATUS_PUBLISHED,
+                            'current_version' => 1,
+                            'approved_version' => 1,
+                            'approved_by_user_id' => $createdUsers['manager@acme-demo.test']->id,
+                            'approved_at' => now(),
+                            'published_at' => now(),
+                            'expires_at' => now()->addDays(60),
+                            'seo_title' => 'Senior AI Platform Architect | Acme Global Tech (Demo)',
+                            'seo_description' => 'Join Acme Global Tech as a Senior AI Platform Architect.',
+                        ]
+                    );
+
+                    $candA = Candidate::withoutTenantScope()->updateOrCreate(
+                        ['tenant_id' => $tenantA->id, 'email' => 'jordan.taylor@candidate-demo.test'],
+                        [
+                            'uuid' => (string) Str::uuid(),
+                            'candidate_code' => 'CAND-2026-1001',
+                            'first_name' => 'Jordan',
+                            'last_name' => 'Taylor (Demo Candidate)',
+                            'phone' => '+1-555-0199',
+                            'location_city' => 'New York',
+                            'country_code' => 'US',
+                            'current_title' => 'Principal Software Engineer',
+                            'years_experience' => 8,
+                            'skills' => ['PHP 8.5', 'Laravel 13', 'MariaDB', 'System Architecture'],
+                            'source_channel' => 'CAREER_PORTAL',
+                            'talent_pool_tag' => 'architecture',
+                            'consent_given' => true,
+                            'consent_version' => 'PRIVACY-v2.0',
+                            'consent_given_at' => now(),
+                            'privacy_notice_acknowledged' => true,
+                            'retention_expires_at' => now()->addDays(365),
+                            'is_demo' => true,
+                        ]
+                    );
+
+                    Application::withoutTenantScope()->updateOrCreate(
+                        ['tenant_id' => $tenantA->id, 'application_number' => 'APP-2026-1001'],
+                        [
+                            'uuid' => (string) Str::uuid(),
+                            'job_posting_id' => $jobA->id,
+                            'requisition_id' => $reqA->id,
+                            'candidate_id' => $candA->id,
+                            'assigned_recruiter_user_id' => $createdUsers['recruiter@acme-demo.test']->id,
+                            'current_stage' => Application::STAGE_DECISION_PENDING,
+                            'candidate_visible_status' => 'Final Evaluation in Progress',
+                            'screening_score' => 92.50,
+                            'eligibility_verified' => true,
+                            'screening_notes' => 'Strong systems architecture and security background.',
+                            'cover_note' => 'Excited to contribute to the Unified Recruitment AI Platform.',
+                            'submitted_at' => now()->subDays(5),
+                            'version' => 3,
+                        ]
+                    );
+
+                    // Tenant B published job & candidate
+                    $jobB = JobPosting::withoutTenantScope()->updateOrCreate(
+                        ['tenant_id' => $tenantB->id, 'code' => 'JOB-2026-0901'],
+                        [
+                            'uuid' => (string) Str::uuid(),
+                            'requisition_id' => $globexReq->id,
+                            'slug' => 'lead-clinical-systems-engineer-job-2026-0901',
+                            'title' => 'Lead Clinical Systems Engineer (Globex Demo)',
+                            'department_id' => $globexDept->id,
+                            'location_id' => $globexLoc->id,
+                            'employment_type' => 'FULL_TIME',
+                            'work_mode' => 'ONSITE',
+                            'experience_level' => 'LEAD',
+                            'summary' => 'Lead clinical systems interoperability in London.',
+                            'responsibilities' => '- Clinical data pipelines',
+                            'qualifications' => '- HL7/FHIR experience',
+                            'skills_required' => ['HL7', 'FHIR', 'Security'],
+                            'compensation_min' => 85000,
+                            'compensation_max' => 110000,
+                            'currency_code' => 'GBP',
+                            'show_compensation_publicly' => true,
+                            'status' => JobPosting::STATUS_PUBLISHED,
+                            'current_version' => 1,
+                            'approved_version' => 1,
+                            'approved_by_user_id' => $createdUsers['admin@globex-demo.test']->id,
+                            'approved_at' => now(),
+                            'published_at' => now(),
+                            'expires_at' => now()->addDays(60),
+                        ]
+                    );
+
+                    Candidate::withoutTenantScope()->updateOrCreate(
+                        ['tenant_id' => $tenantB->id, 'email' => 'clara.oswald@globex-candidate.test'],
+                        [
+                            'uuid' => (string) Str::uuid(),
+                            'candidate_code' => 'CAND-2026-9001',
+                            'first_name' => 'Clara',
+                            'last_name' => 'Oswald (Globex Demo)',
+                            'location_city' => 'London',
+                            'country_code' => 'GB',
+                            'current_title' => 'Clinical Engineer',
+                            'years_experience' => 6,
+                            'skills' => ['HL7', 'FHIR'],
+                            'source_channel' => 'CAREER_PORTAL',
+                            'consent_given' => true,
+                            'consent_version' => 'PRIVACY-v2.0',
+                            'consent_given_at' => now(),
+                            'privacy_notice_acknowledged' => true,
+                            'is_demo' => true,
+                        ]
+                    );
+                }
             }
         }
     }
