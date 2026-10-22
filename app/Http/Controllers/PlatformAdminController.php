@@ -203,7 +203,7 @@ class PlatformAdminController extends Controller
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'min:3', 'max:160'],
-            'slug' => ['required', 'string', 'min:3', 'max:80', 'alpha_dash', 'unique:tenants,slug'],
+            'slug' => ['required', 'string', 'min:3', 'max:80', 'alpha_dash', 'not_in:login,logout,platformadmin,organization,dashboard,careers,health,setup,system,admin,integrations,api,auth,mcp,tenant,sitemap,robots', 'unique:tenants,slug'],
             'primary_domain' => ['nullable', 'string', 'max:190', 'unique:tenants,primary_domain'],
             'default_timezone' => ['nullable', 'timezone:all'],
             'default_currency' => ['nullable', 'string', 'in:USD,GBP,EUR,AED,INR'],
