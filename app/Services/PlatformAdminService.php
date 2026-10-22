@@ -543,8 +543,8 @@ class PlatformAdminService
      */
     public function createTenant(array $data, User $actor): Tenant
     {
-        if (! $actor->isActivePlatformSuperAdmin()) {
-            throw new InvalidArgumentException('PLATFORM_SUPERADMIN_REQUIRED');
+        if (! $actor->isActivePlatformAdmin()) {
+            throw new InvalidArgumentException('PLATFORM_ADMIN_REQUIRED');
         }
 
         $minRetention = $this->configService->getInt('security.min_retention_days');
