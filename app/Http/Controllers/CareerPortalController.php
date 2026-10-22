@@ -46,7 +46,7 @@ class CareerPortalController extends Controller
         return view('careers.index', [
             'jobs' => $query->paginate(12)->withQueryString(),
             'tenants' => Tenant::where('status', 'ACTIVE')->orderBy('name')->get(),
-            'tenant' => $selectedTenant,
+            'tenant' => null,
         ]);
     }
 
@@ -56,7 +56,7 @@ class CareerPortalController extends Controller
         // The path is authoritative; a query-string tenant must not switch the portal context.
         $request->query->set('tenant', $tenant->slug);
 
-        return $this->index($request);
+        return $this->index($request)->with('tenant', $tenant);
     }
 
     public function showJob(string $tenantSlug, string $jobSlug): View
