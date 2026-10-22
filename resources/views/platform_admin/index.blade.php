@@ -316,13 +316,17 @@
                                 </form>
                             </td>
                             <td>
-                                <form method="POST" action="{{ route('admin.iam.support-context') }}" class="d-flex gap-1">
-                                    @csrf
-                                    <input type="hidden" name="target_tenant_id" value="{{ $t->id }}">
-                                    <input type="text" name="support_ticket_reference" class="form-control form-control-sm" placeholder="TKT-101" required minlength="5" style="width: 90px;">
-                                    <input type="text" name="justification" class="form-control form-control-sm" placeholder="Support reason" required minlength="10" style="width: 130px;">
-                                    <button type="submit" class="btn btn-sm btn-outline-dark">Support Switch</button>
-                                </form>
+                                @if(auth()->user()->isActivePlatformSuperAdmin())
+                                    <form method="POST" action="{{ route('platform-admin.support-context') }}" class="d-flex gap-1">
+                                        @csrf
+                                        <input type="hidden" name="target_tenant_id" value="{{ $t->id }}">
+                                        <input type="text" name="support_ticket_reference" class="form-control form-control-sm" placeholder="TKT-101" required minlength="5" style="width: 90px;">
+                                        <input type="text" name="justification" class="form-control form-control-sm" placeholder="Support reason" required minlength="10" style="width: 130px;">
+                                        <button type="submit" class="btn btn-sm btn-outline-dark">Support Switch</button>
+                                    </form>
+                                @else
+                                    <span class="small text-muted">Super Admin approval required</span>
+                                @endif
                             </td>
                         </tr>
                     @endforeach
