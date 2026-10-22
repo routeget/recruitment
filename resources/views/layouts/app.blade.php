@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', 'Unified Recruitment AI Platform')</title>
+    <title>@yield('title', $platformBranding['display_name'] ?? 'Unified Recruitment AI Platform')</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
     <style>
         :root {
@@ -80,8 +80,8 @@
     <header class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary sticky-top px-3">
         <div class="container-fluid">
             <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="{{ auth()->check() ? route('dashboard') : (Route::has('careers.index') ? route('careers.index') : route('login')) }}">
-                <span class="badge bg-primary">URAP</span>
-                <span>Unified Recruitment AI Platform</span>
+                <span class="badge bg-primary">{{ $platformBranding['brand_code'] ?? 'URAP' }}</span>
+                <span>{{ $platformBranding['display_name'] ?? 'Unified Recruitment AI Platform' }}</span>
                 <span class="badge bg-warning text-dark ms-1">Alpha</span>
             </a>
 
@@ -100,6 +100,9 @@
 
                 <div class="d-flex align-items-center gap-3 flex-wrap">
                     @auth
+                        @if(auth()->user()->isActivePlatformSuperAdmin())
+                            <span class="badge bg-danger text-white">GLOBAL PLATFORM SUPER ADMIN</span>
+                        @endif
                         @if(isset($activeTenant) && $activeTenant)
                             <div class="d-flex align-items-center gap-2 text-light small">
                                 <span class="badge bg-info text-dark">
@@ -133,6 +136,17 @@
             @auth
                 <nav class="col-md-3 col-lg-2 d-md-block urap-sidebar py-3 collapse" id="sidebarMenu" aria-label="Recruitment Platform Navigation">
                     <div class="position-sticky">
+                        @if(auth()->user()->isActivePlatformSuperAdmin() && Route::has('platform-admin.index'))
+                            <div class="nav-section-label text-warning">Platform Administration</div>
+                            <ul class="nav flex-column mb-2">
+                                <li class="nav-item">
+                                    <a class="nav-link {{ request()->routeIs('platform-admin.*') ? 'active' : '' }}" href="{{ route('platform-admin.index') }}">
+                                        Platform Configuration Centre
+                                    </a>
+                                </li>
+                            </ul>
+                        @endif
+
                         <div class="nav-section-label">Core Workspace</div>
                         <ul class="nav flex-column">
                             <li class="nav-item">
@@ -236,17 +250,17 @@
                                     </a>
                                 </li>
                             @endif
-                            @if(in_array('iam.manage', $activeUserPermissions ?? []) || auth()->user()->is_platform_superadmin)
+                            @if(in_array('iam.manage', $activeUserPermissions ?? []))
                                 <li class="nav-item">
                                     <a class="nav-link {{ request()->routeIs('admin.iam.*') ? 'active' : '' }}" href="{{ route('admin.iam.index') }}">
-                                        Tenants &amp; IAM Access
+                                        Tenants &amp; IAM Access (Tenant Scope)
                                     </a>
                                 </li>
                             @endif
                             @if(in_array('audit.view', $activeUserPermissions ?? []))
                                 <li class="nav-item">
                                     <a class="nav-link {{ request()->routeIs('admin.audit.*') ? 'active' : '' }}" href="{{ route('admin.audit.index') }}">
-                                        Security &amp; Audit Trail
+                                        Security &amp; Audit Trail (Tenant Scope)
                                     </a>
                                 </li>
                             @endif
@@ -294,8 +308,9 @@
     <footer class="border-top bg-white py-2 px-4 mt-auto small text-muted">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div>
-                <strong>Unified Recruitment AI Platform (Alpha)</strong> &mdash;
+                <strong>{{ $platformBranding['display_name'] ?? 'Unified Recruitment AI Platform' }} (Alpha)</strong> &mdash;
                 <span class="badge badge-gate">HR Safety Gate: Offer Acceptance Never Auto-Creates Dynamics Employee</span>
+                &mdash; Support: <code>{{ $platformBranding['support_email'] ?? 'support@career.tringers.com' }}</code>
             </div>
             <div>
                 Correlation ID: <code>{{ $correlationId ?? 'n/a' }}</code>

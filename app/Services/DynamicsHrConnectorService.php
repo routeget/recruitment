@@ -49,13 +49,16 @@ class DynamicsHrConnectorService
      */
     public function updateConfig(DynamicsIntegrationConfig $config, array $data, User $actor): DynamicsIntegrationConfig
     {
+        $globalLiveWritesBlocked = app(PlatformConfigService::class)->getBool('dynamics.global_live_writes_blocked');
+        $requestedLive = ! empty($data['real_employee_creation_enabled']) && ! $globalLiveWritesBlocked;
+
         $config->update([
             'environment_url' => trim((string) ($data['environment_url'] ?? $config->environment_url)),
             'connection_mode' => (string) ($data['connection_mode'] ?? $config->connection_mode),
-            'real_employee_creation_enabled' => (bool) ($data['real_employee_creation_enabled'] ?? false),
+            'real_employee_creation_enabled' => $requestedLive,
             'last_health_check_at' => now(),
             'last_health_status' => ! empty($data['real_employee_creation_enabled'])
-                ? 'AWAITING_OAUTH_FAIL_CLOSED'
+                ? ($globalLiveWritesBlocked ? 'BLOCKED_BY_PLATFORM_SAFETY_GATE' : 'AWAITING_OAUTH_FAIL_CLOSED')
                 : 'SANDBOX_READY_LIVE_DISABLED',
         ]);
 
@@ -67,6 +70,7 @@ class DynamicsHrConnectorService
             metadata: [
                 'connection_mode' => $config->connection_mode,
                 'real_employee_creation_enabled' => $config->real_employee_creation_enabled,
+                'global_live_writes_blocked' => $globalLiveWritesBlocked,
             ],
             tenantId: (int) $config->tenant_id,
             actorUserId: (int) $actor->id,

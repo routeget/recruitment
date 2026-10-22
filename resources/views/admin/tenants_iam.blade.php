@@ -11,7 +11,8 @@
                 <li class="breadcrumb-item active" aria-current="page">Tenants &amp; IAM Access</li>
             </ol>
         </nav>
-        <h1 class="h3 fw-bold mb-0">Tenant Identity, RBAC &amp; ABAC Governance</h1>
+        <h1 class="h3 fw-bold mb-0">Tenant Identity, RBAC &amp; ABAC Governance ({{ $tenant->name }})</h1>
+        <p class="text-muted small mb-0">Tenant-scoped membership and directory management. Global platform administration lives in the <a href="{{ route('platform-admin.index') }}">Platform Configuration Centre</a> (Platform Super Admin only).</p>
     </div>
 </div>
 
@@ -34,7 +35,7 @@
                         <label for="role_slug" class="form-label fw-semibold">Role / Persona</label>
                         <select id="role_slug" name="role_slug" class="form-select" required>
                             @foreach($roles as $role)
-                                @if($role->slug !== 'platform_superadmin' || auth()->user()->is_platform_superadmin)
+                                @if($role->slug !== 'platform_superadmin')
                                     <option value="{{ $role->slug }}">{{ $role->name }} ({{ $role->slug }})</option>
                                 @endif
                             @endforeach
@@ -49,7 +50,7 @@
             </div>
         </div>
 
-        @if(auth()->user()->is_platform_superadmin)
+        @if(auth()->user()->isActivePlatformSuperAdmin())
         <div class="card stat-card border-warning">
             <div class="card-header bg-warning bg-opacity-10 fw-bold">
                 Platform Superadmin — Audited Support Context

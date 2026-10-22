@@ -6,7 +6,7 @@
 <div class="py-3">
     <div class="p-4 mb-4 rounded-3 bg-dark text-white">
         <div class="container-fluid py-2">
-            <span class="badge bg-info text-dark mb-2">Public Career Portal &amp; CMS</span>
+            <span class="badge bg-info text-dark mb-2">{{ $platformBranding['career_portal_banner'] ?? 'Public Career Portal & CMS' }}</span>
             <h1 class="display-6 fw-bold">Explore Approved Open Positions</h1>
             <p class="col-md-8 fs-6 text-light mb-0">
                 Only approved, published job postings appear here with verified Schema.org <code>JobPosting</code> metadata.

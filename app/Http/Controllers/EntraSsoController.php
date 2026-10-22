@@ -181,8 +181,8 @@ class EntraSsoController extends Controller
             'expected_entra_object_id' => ['nullable', 'uuid'],
         ]);
 
-        if ($validated['role_slug'] === 'platform_superadmin' && ! $request->user()->is_platform_superadmin) {
-            abort(403, 'Only Platform Superadmin may invite a platform_superadmin.');
+        if ($validated['role_slug'] === 'platform_superadmin') {
+            abort(403, 'PLATFORM_ROLE_SEPARATION: Global Platform Super Admin authority cannot be granted via tenant SSO invitations.');
         }
 
         /** @var ExternalIdentityConnection $connection */

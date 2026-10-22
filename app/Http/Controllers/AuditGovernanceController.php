@@ -65,7 +65,7 @@ class AuditGovernanceController extends Controller
             ->get();
 
         $permissions = Permission::orderBy('module')->orderBy('slug')->get();
-        $allTenants = Auth::user()->is_platform_superadmin ? Tenant::orderBy('id')->get() : collect([$tenant]);
+        $allTenants = Auth::user()->isActivePlatformSuperAdmin() ? Tenant::orderBy('id')->get() : collect([$tenant]);
 
         $ssoConnections = ExternalIdentityConnection::withoutGlobalScopes()
             ->where('tenant_id', $tenant->id)
@@ -88,7 +88,7 @@ class AuditGovernanceController extends Controller
         return view('admin.tenants_iam', [
             'tenant' => $tenant,
             'memberships' => $memberships,
-            'roles' => $roles,
+            'roles' => $roles->where('slug', '!==', 'platform_superadmin')->values(),
             'permissions' => $permissions,
             'allTenants' => $allTenants,
             'ssoConnections' => $ssoConnections,
@@ -109,8 +109,15 @@ class AuditGovernanceController extends Controller
             'password' => ['nullable', 'string', 'min:10'],
         ]);
 
-        if ($validated['role_slug'] === 'platform_superadmin' && ! Auth::user()->is_platform_superadmin) {
-            abort(403, 'PERMISSION_DENIED: Only a Platform Superadmin may grant platform_superadmin.');
+        if ($validated['role_slug'] === 'platform_superadmin') {
+            $audit->record(
+                module: 'security',
+                action: 'tenant_member.platform_role_assignment_blocked',
+                outcome: 'DENIED',
+                errorCode: 'PLATFORM_ROLE_SEPARATION',
+                metadata: ['attempted_role' => 'platform_superadmin'],
+            );
+            abort(403, 'PLATFORM_ROLE_SEPARATION: Global Platform Super Admin authority cannot be granted via tenant membership provisioning.');
         }
 
         $role = Role::where('slug', $validated['role_slug'])->firstOrFail();
@@ -157,8 +164,8 @@ class AuditGovernanceController extends Controller
     {
         /** @var User $user */
         $user = Auth::user();
-        if (! $user->is_platform_superadmin) {
-            abort(403, 'PERMISSION_DENIED: Platform Superadmin privilege required.');
+        if (! $user || ! $user->isActivePlatformSuperAdmin()) {
+            abort(403, 'PLATFORM_SUPERADMIN_REQUIRED: Platform Super Admin privilege required.');
         }
 
         $validated = $request->validate([

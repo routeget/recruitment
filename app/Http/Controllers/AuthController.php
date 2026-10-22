@@ -8,12 +8,14 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\AuditService;
 use App\Services\EntraSsoService;
+use App\Services\PlatformConfigService;
 use App\Services\TenantContextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\View\View;
 
 class AuthController extends Controller
@@ -59,8 +61,9 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
+        $maxAttempts = app(PlatformConfigService::class)->getInt('security.login_max_attempts_per_minute');
         $throttleKey = 'login:'.strtolower($credentials['email']).'|'.$request->ip();
-        if (RateLimiter::tooManyAttempts($throttleKey, 8)) {
+        if (RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
             $audit->record(
                 module: 'auth',
                 action: 'login_rate_limited',
@@ -74,8 +77,26 @@ class AuthController extends Controller
             ])->onlyInput('email');
         }
 
-        // Enforce tenant-required Microsoft Entra ID SSO before accepting local password authentication
         $candidateUser = User::where('email', strtolower($credentials['email']))->first();
+        if ($candidateUser !== null && ! $candidateUser->isActiveAccount()) {
+            $audit->record(
+                module: 'auth',
+                action: 'login_blocked_account_suspended',
+                outcome: 'DENIED',
+                errorCode: 'ACCOUNT_SUSPENDED',
+                entityType: 'User',
+                entityId: (string) $candidateUser->id,
+                actorIdentifier: $candidateUser->email,
+                tenantId: $candidateUser->current_tenant_id,
+                actorUserId: $candidateUser->id,
+            );
+
+            return back()->withErrors([
+                'email' => 'ACCOUNT_SUSPENDED: Your account has been suspended by platform administration.',
+            ])->onlyInput('email');
+        }
+
+        // Enforce tenant-required Microsoft Entra ID SSO before accepting local password authentication
         if ($candidateUser !== null && $entraSso->isLocalPasswordLoginBlockedForUser($candidateUser)) {
             $audit->record(
                 module: 'sso',
@@ -127,14 +148,19 @@ class AuthController extends Controller
             metadata: [
                 'resolved_tenant_id' => $tenant?->id,
                 'resolved_tenant_slug' => $tenant?->slug,
+                'is_platform_superadmin' => $user->isActivePlatformSuperAdmin(),
                 'roles' => $user->roleSlugsForTenant($tenant?->id),
             ],
             tenantId: $tenant?->id,
             actorUserId: $user->id
         );
 
-        return redirect()->intended(route('dashboard'))
-            ->with('status', 'Authenticated into '.$tenant?->name.'.');
+        $defaultRedirect = ($user->isActivePlatformSuperAdmin() && $tenant === null && Route::has('platform-admin.index'))
+            ? route('platform-admin.index')
+            : route('dashboard');
+
+        return redirect()->intended($defaultRedirect)
+            ->with('status', 'Authenticated into '.($tenant?->name ?? 'Platform Administration & Configuration Centre').'.');
     }
 
     public function logout(Request $request, AuditService $audit): RedirectResponse

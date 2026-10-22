@@ -20,6 +20,7 @@ use App\Services\ApiAndMcpPlatformService;
 use App\Services\AuditService;
 use App\Services\CandidateAndApplicationService;
 use App\Services\OfferAndHrHandoverService;
+use App\Services\PlatformConfigService;
 use App\Services\RequisitionService;
 use App\Services\TenantContextService;
 use App\Support\ApiClientPrincipal;
@@ -253,6 +254,10 @@ class ApiV1AndMcpController extends Controller
 
     public function listMcpTools(Request $request): JsonResponse
     {
+        if (! app(PlatformConfigService::class)->getBool('api.global_mcp_enabled')) {
+            return $this->errorEnvelope('MCP_GLOBALLY_DISABLED', 'Model Context Protocol endpoints are disabled by platform governance policy.', 503);
+        }
+
         [$tenantId, $actor] = $this->resolveApiAuthContext($request, 'mcp.use');
 
         $tools = [];
@@ -273,6 +278,10 @@ class ApiV1AndMcpController extends Controller
 
     public function invokeMcpTool(Request $request): JsonResponse
     {
+        if (! app(PlatformConfigService::class)->getBool('api.global_mcp_enabled')) {
+            return $this->errorEnvelope('MCP_GLOBALLY_DISABLED', 'Model Context Protocol endpoints are disabled by platform governance policy.', 503);
+        }
+
         [$tenantId, $actor] = $this->resolveApiAuthContext($request, 'mcp.use');
 
         $validated = $request->validate([

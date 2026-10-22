@@ -197,6 +197,12 @@ class ApiAndMcpPlatformService
      */
     public function createWebhookSubscription(string $name, string $targetUrl, array $subscribedEvents, int $tenantId, User $actor): WebhookSubscription
     {
+        $maxSubs = app(PlatformConfigService::class)->getInt('webhooks.max_subscriptions_per_tenant');
+        $currentCount = WebhookSubscription::withoutGlobalScopes()->where('tenant_id', $tenantId)->count();
+        if ($currentCount >= $maxSubs) {
+            throw new InvalidArgumentException("WEBHOOK_LIMIT_EXCEEDED: Maximum of {$maxSubs} webhook subscriptions per tenant reached.");
+        }
+
         $this->ssrfGuard->assertSafeTargetUrl($targetUrl);
 
         $signingSecret = 'whsec_'.Str::random(32);
@@ -231,6 +237,7 @@ class ApiAndMcpPlatformService
      */
     public function dispatchSignedWebhook(WebhookSubscription $subscription, string $eventType, array $data, ?User $actor = null): WebhookDelivery
     {
+        $globalEnabled = app(PlatformConfigService::class)->getBool('webhooks.global_delivery_enabled');
         $eventId = 'evt_'.Str::lower(Str::random(20));
         $timestamp = (string) now()->timestamp;
 
@@ -245,6 +252,8 @@ class ApiAndMcpPlatformService
         $rawJson = (string) json_encode($envelope);
         $signature = 't='.$timestamp.',v1='.hash_hmac('sha256', $timestamp.'.'.$rawJson, (string) $subscription->signing_secret);
 
+        $initialStatus = $globalEnabled ? 'PENDING' : 'PAUSED_BY_PLATFORM_POLICY';
+
         $delivery = WebhookDelivery::query()->create([
             'tenant_id' => $subscription->tenant_id,
             'webhook_subscription_id' => $subscription->id,
@@ -254,27 +263,29 @@ class ApiAndMcpPlatformService
             'signature_header' => $signature,
             'response_status' => null,
             'attempt_count' => 0,
-            'status' => 'PENDING',
+            'status' => $initialStatus,
             'queued_at' => now(),
             'delivered_at' => null,
         ]);
 
         $this->auditService->record(
             module: 'api_platform',
-            action: 'webhook.queued',
+            action: $globalEnabled ? 'webhook.queued' : 'webhook.paused_by_platform_policy',
             entityType: 'webhook_delivery',
             entityId: (string) $delivery->id,
             metadata: [
                 'event_id' => $eventId,
                 'event_type' => $eventType,
                 'subscription_id' => $subscription->id,
-                'status' => 'PENDING',
+                'status' => $initialStatus,
             ],
             tenantId: (int) $subscription->tenant_id,
             actorUserId: $actor ? (int) $actor->id : null,
         );
 
-        DeliverSignedWebhookJob::dispatch((int) $delivery->id);
+        if ($globalEnabled) {
+            DeliverSignedWebhookJob::dispatch((int) $delivery->id);
+        }
 
         return $delivery->fresh();
     }

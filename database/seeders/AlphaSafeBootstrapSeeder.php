@@ -65,7 +65,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
             'platform_superadmin' => [
                 'name' => 'Platform Superadmin',
                 'description' => 'Platform configuration, tenant lifecycle, provider health. Scoped support access only.',
-                'permissions' => ['ai.admin', 'api.admin', 'dynamics.admin', 'reports.view', 'audit.view'],
+                'permissions' => ['iam.manage', 'ai.admin', 'api.admin', 'dynamics.admin', 'reports.view', 'audit.view'],
             ],
             'tenant_admin' => [
                 'name' => 'Tenant Owner / Admin',
@@ -260,10 +260,15 @@ class AlphaSafeBootstrapSeeder extends Seeder
                         'name' => $u['name'],
                         'password' => $defaultPasswordHash,
                         'current_tenant_id' => $u['tenant']->id,
-                        'is_platform_superadmin' => $u['superadmin'],
                         'mfa_enabled' => true,
                     ]
                 );
+
+                $user->forceFill([
+                    'status' => 'ACTIVE',
+                    'is_platform_superadmin' => (bool) $u['superadmin'],
+                    'platform_role' => $u['superadmin'] ? 'platform_super_admin' : null,
+                ])->saveQuietly();
 
                 TenantMembership::updateOrCreate(
                     [

@@ -15,6 +15,7 @@ use App\Http\Controllers\IntegrationsAndDynamicsController;
 use App\Http\Controllers\JobPostingController;
 use App\Http\Controllers\OfferAndHrHandoverController;
 use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\PlatformAdminController;
 use App\Http\Controllers\RequisitionController;
 use Illuminate\Support\Facades\Route;
 
@@ -249,4 +250,18 @@ Route::middleware('auth')->group(function () {
     Route::get('/admin/audit-events', [AuditGovernanceController::class, 'auditIndex'])
         ->middleware('permission:audit.view')
         ->name('admin.audit.index');
+
+    // Platform Administration & Configuration Centre (Global Platform Super Admin Control Plane)
+    Route::prefix('platform-admin')->middleware('platform.superadmin')->name('platform-admin.')->group(function () {
+        Route::get('/', [PlatformAdminController::class, 'index'])->name('index');
+        Route::get('/section/{section}', [PlatformAdminController::class, 'index'])->name('section');
+        Route::post('/settings/{section}', [PlatformAdminController::class, 'updateSection'])->name('settings.update');
+        Route::post('/tenants', [PlatformAdminController::class, 'storeTenant'])->name('tenants.store');
+        Route::post('/tenants/{tenant}/lifecycle', [PlatformAdminController::class, 'updateTenantLifecycle'])->name('tenants.lifecycle');
+        Route::post('/admins/promote', [PlatformAdminController::class, 'promoteAdmin'])->name('admins.promote');
+        Route::post('/admins/{targetUser}/revoke', [PlatformAdminController::class, 'revokeAdmin'])->name('admins.revoke');
+        Route::post('/api-clients/{client}/status', [PlatformAdminController::class, 'updateApiClientStatus'])->name('api-clients.status');
+        Route::post('/webhooks/{subscription}/status', [PlatformAdminController::class, 'updateWebhookStatus'])->name('webhooks.status');
+        Route::post('/security/rotate-password', [PlatformAdminController::class, 'rotatePassword'])->name('security.rotate-password');
+    });
 });

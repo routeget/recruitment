@@ -48,15 +48,24 @@ class AiGatewayService
     public function __construct(
         private readonly AuditService $auditService,
         private readonly TenantContextService $tenantContext,
+        private readonly ?PlatformConfigService $platformConfig = null,
     ) {}
+
+    private function config(): PlatformConfigService
+    {
+        return $this->platformConfig ?? app(PlatformConfigService::class);
+    }
 
     public function ensureDefaultsForTenant(int $tenantId): void
     {
+        $defaultPrimary = $this->config()->getString('ai.default_primary_provider');
+        $globalCap = $this->config()->getInt('ai.global_monthly_budget_cap_minor');
+
         $providers = [
-            ['provider_key' => 'claude', 'model_name' => 'claude-3-7-sonnet', 'is_primary' => true, 'monthly_budget_minor' => 50000],
-            ['provider_key' => 'gemini', 'model_name' => 'gemini-2.5-pro', 'is_primary' => false, 'monthly_budget_minor' => 50000],
-            ['provider_key' => 'openai', 'model_name' => 'gpt-4.1', 'is_primary' => false, 'monthly_budget_minor' => 50000],
-            ['provider_key' => 'deterministic_fake', 'model_name' => 'urap-deterministic-v1', 'is_primary' => false, 'monthly_budget_minor' => 100000],
+            ['provider_key' => 'claude', 'model_name' => 'claude-3-7-sonnet', 'monthly_budget_minor' => min(50000, $globalCap)],
+            ['provider_key' => 'gemini', 'model_name' => 'gemini-2.5-pro', 'monthly_budget_minor' => min(50000, $globalCap)],
+            ['provider_key' => 'openai', 'model_name' => 'gpt-4.1', 'monthly_budget_minor' => min(50000, $globalCap)],
+            ['provider_key' => 'deterministic_fake', 'model_name' => 'urap-deterministic-v1', 'monthly_budget_minor' => min(100000, $globalCap)],
         ];
 
         foreach ($providers as $p) {
@@ -65,7 +74,7 @@ class AiGatewayService
                 [
                     'model_name' => $p['model_name'],
                     'is_enabled' => true,
-                    'is_primary' => $p['is_primary'],
+                    'is_primary' => $p['provider_key'] === $defaultPrimary,
                     'monthly_budget_minor' => $p['monthly_budget_minor'],
                     'current_spend_minor' => 0,
                     'kill_switch_engaged' => false,
@@ -98,6 +107,22 @@ class AiGatewayService
         int $tenantId,
     ): AiTaskRun {
         $this->ensureDefaultsForTenant($tenantId);
+
+        if ($this->config()->getBool('ai.global_kill_switch')) {
+            $this->auditService->record(
+                module: 'ai_gateway',
+                action: 'ai.global_kill_switch_blocked',
+                outcome: 'DENIED',
+                errorCode: 'AI_GLOBAL_KILL_SWITCH_ENGAGED',
+                entityType: 'ai_task',
+                entityId: $taskType,
+                metadata: ['provider_key' => $providerKey, 'task_type' => $taskType],
+                tenantId: $tenantId,
+                actorUserId: (int) $actor->id,
+            );
+
+            throw new RuntimeException('AI invocation blocked: Platform-wide AI emergency kill switch is engaged (AI_GLOBAL_KILL_SWITCH_ENGAGED).', 409);
+        }
 
         if (in_array($taskType, self::PROHIBITED_TASKS, true) || ! array_key_exists($taskType, self::ALLOWED_TASKS)) {
             $this->auditService->record(
@@ -138,7 +163,10 @@ class AiGatewayService
         }
 
         $estimatedCostMinor = 25; // $0.25 per structured call
-        if (($providerConfig->current_spend_minor + $estimatedCostMinor) > $providerConfig->monthly_budget_minor) {
+        $globalCap = $this->config()->getInt('ai.global_monthly_budget_cap_minor');
+        $effectiveBudgetCap = min((int) $providerConfig->monthly_budget_minor, $globalCap);
+
+        if (($providerConfig->current_spend_minor + $estimatedCostMinor) > $effectiveBudgetCap) {
             $this->auditService->record(
                 module: 'ai_gateway',
                 action: 'ai.budget_exceeded_blocked',
@@ -150,6 +178,7 @@ class AiGatewayService
                     'provider_key' => $providerKey,
                     'current_spend_minor' => $providerConfig->current_spend_minor,
                     'monthly_budget_minor' => $providerConfig->monthly_budget_minor,
+                    'global_budget_cap_minor' => $globalCap,
                 ],
                 tenantId: $tenantId,
                 actorUserId: (int) $actor->id,
@@ -158,7 +187,8 @@ class AiGatewayService
             throw new RuntimeException('AI provider monthly budget cap exceeded (AI_BUDGET_EXCEEDED).', 429);
         }
 
-        $redactedInput = $providerConfig->redaction_enabled
+        $mustRedact = (bool) $providerConfig->redaction_enabled || $this->config()->getBool('ai.mandatory_pii_redaction');
+        $redactedInput = $mustRedact
             ? $this->redactPiiAndSecrets($rawInputText)
             : $rawInputText;
 
@@ -255,11 +285,15 @@ class AiGatewayService
 
     public function updateProviderConfig(AiProviderConfig $config, array $data, User $actor): AiProviderConfig
     {
+        $globalCap = $this->config()->getInt('ai.global_monthly_budget_cap_minor');
+        $requestedBudget = (int) ($data['monthly_budget_minor'] ?? $config->monthly_budget_minor);
+        $mandatoryRedaction = $this->config()->getBool('ai.mandatory_pii_redaction');
+
         $config->update([
             'kill_switch_engaged' => (bool) ($data['kill_switch_engaged'] ?? false),
             'is_enabled' => (bool) ($data['is_enabled'] ?? true),
-            'monthly_budget_minor' => (int) ($data['monthly_budget_minor'] ?? $config->monthly_budget_minor),
-            'redaction_enabled' => (bool) ($data['redaction_enabled'] ?? true),
+            'monthly_budget_minor' => min($requestedBudget, $globalCap),
+            'redaction_enabled' => $mandatoryRedaction ? true : (bool) ($data['redaction_enabled'] ?? true),
         ]);
 
         $this->auditService->record(

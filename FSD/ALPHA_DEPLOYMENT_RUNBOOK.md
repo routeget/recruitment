@@ -122,6 +122,57 @@ php artisan optimize:clear
 
 ### 4.5 Incident Playbooks
 
-- **AI Provider Outage / Runaway Cost:** Toggle the global or provider-specific AI Kill Switch in **Admin → AI Governance** (`kill_switch_engaged = true`). All AI calls immediately fail closed with `409 AI_KILL_SWITCH_ENGAGED` while manual recruitment workflows continue uninterrupted.
-- **Compromised API Client or MCP Token:** Deactivate or rotate the client credential in **Admin → API & MCP Platform** (`is_active = false`); active tokens are immediately rejected with `401 UNAUTHENTICATED_API_CLIENT`.
-- **Stuck or Uncertain Dynamics 365 HR Handover:** Do NOT force a blind re-create. Use **HR Handover → Reconciliation Console** to inspect the `correlation_id`, verify external state, and either link the existing `external_employee_id` or trigger an idempotent retry.
+- **AI Provider Outage / Runaway Cost:** Toggle the global AI Kill Switch in **Platform Administration & Configuration Centre → AI Governance** (`ai.global_kill_switch = true`) or tenant-scoped **Admin → AI Governance**. All AI calls immediately fail closed with `AI_GLOBAL_KILL_SWITCH_ACTIVE` while manual recruitment workflows continue uninterrupted.
+- **Compromised API Client or MCP Token:** Toggle `api.global_mcp_enabled = false` in **Platform Administration & Configuration Centre → API / MCP & Webhooks** or deactivate/rotate the specific client credential in **Admin → API & MCP Platform** (`is_active = false`); active tokens are immediately rejected with `401 UNAUTHENTICATED_API_CLIENT` or `503 MCP_GLOBALLY_DISABLED`.
+- **Stuck or Uncertain Dynamics 365 HR Handover:** Do NOT force a blind re-create. Ensure `dynamics.global_live_writes_blocked = true` in **Platform Administration & Configuration Centre → Integrations** and use **HR Handover → Reconciliation Console** to inspect the `correlation_id`, verify external state, and either link the existing `external_employee_id` or trigger an idempotent retry.
+
+---
+
+## 5. Platform Super Admin Provisioning, Recovery & Revocation Runbook (`PSA-01` / `CFG-01`)
+
+Global Platform Super Admin authority (`is_platform_superadmin = true` AND `platform_role = 'PLATFORM_SUPER_ADMIN'` AND `status = 'ACTIVE'`) is strictly separated from tenant-scoped roles and can **only** be granted via the server CLI over SSH. No public endpoint or tenant admin UI can grant global Super Admin authority.
+
+### 5.1 Read-Only Status Inspection (`platform:admin-status`)
+
+Inspect current active real vs synthetic `.test` Platform Super Admin identities (emails masked, zero secrets printed):
+
+```bash
+cd /home/career/htdocs/career.tringers.com
+php artisan platform:admin-status
+php artisan platform:admin-status --json
+```
+
+### 5.2 Provisioning a Real Platform Super Admin (`platform:admin-provision`)
+
+Run interactively over SSH so the password is entered via a hidden terminal prompt (never stored in shell history or process arguments):
+
+```bash
+cd /home/career/htdocs/career.tringers.com
+php artisan platform:admin-provision \
+  --email="owner@your-organization.com" \
+  --name="Platform Owner" \
+  --operator="ssh-operator-id" \
+  --reason="Initial production Platform Super Admin provisioning"
+```
+
+- **Password Policy:** Minimum 14 characters including uppercase, lowercase, digit, and special character; rejects known demo passwords and email local-part inclusion.
+- **Synthetic Domain Block:** Rejects `.test`, `.example`, `.invalid`, `.localhost`, and disposable email domains.
+- **Idempotency:** Safe to re-run; if the account is already an active `PLATFORM_SUPER_ADMIN`, returns `PLATFORM_SUPERADMIN_UNCHANGED` (`exit 0`) without duplicating records.
+- **Promoting an Existing Non-Super-Admin Account:** Requires explicit `--promote-existing`.
+- **Recovering a Suspended Super Admin Account:** Requires explicit `--recover-suspended` and `--reset-password`.
+
+### 5.3 Revoking or Suspending a Platform Super Admin (`platform:admin-revoke`)
+
+To demote or suspend a Platform Super Admin and immediately invalidate all of their active web sessions:
+
+```bash
+cd /home/career/htdocs/career.tringers.com
+php artisan platform:admin-revoke \
+  --email="former-admin@your-organization.com" \
+  --operator="ssh-operator-id" \
+  --reason="Offboarding / role rotation" \
+  --suspend
+```
+
+- **Last-Super-Admin Lockout Safeguard:** Both `platform:admin-revoke` and the web `/platform-admin/admins/{id}/revoke` endpoint refuse to revoke or suspend the final active real Platform Super Admin (`LAST_SUPERADMIN_PROTECTION`). Provision a replacement real Platform Super Admin first before revoking the outgoing administrator.
+

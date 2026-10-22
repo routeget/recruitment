@@ -21,7 +21,6 @@ class User extends Authenticatable
         'email',
         'password',
         'current_tenant_id',
-        'is_platform_superadmin',
         'mfa_enabled',
         'last_login_at',
     ];
@@ -38,7 +37,11 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_platform_superadmin' => 'boolean',
             'mfa_enabled' => 'boolean',
+            'must_rotate_password' => 'boolean',
             'last_login_at' => 'datetime',
+            'platform_admin_granted_at' => 'datetime',
+            'password_changed_at' => 'datetime',
+            'mfa_enrolled_at' => 'datetime',
         ];
     }
 
@@ -49,6 +52,47 @@ class User extends Authenticatable
                 $user->uuid = (string) Str::uuid();
             }
         });
+    }
+
+    public function isActiveAccount(): bool
+    {
+        return ($this->status ?? 'ACTIVE') === 'ACTIVE';
+    }
+
+    /**
+     * Authoritative check for global Platform Super Admin authority.
+     * Tenant role memberships alone never grant global platform authority.
+     */
+    public function isActivePlatformSuperAdmin(): bool
+    {
+        return $this->isActiveAccount() && (bool) $this->is_platform_superadmin === true;
+    }
+
+    public function isSyntheticDemoIdentity(): bool
+    {
+        $email = strtolower((string) $this->email);
+        if ($email === 'platform.superadmin@tringers.test') {
+            return true;
+        }
+
+        foreach (['.test', '.example', '.invalid', '.localhost'] as $suffix) {
+            if (str_ends_with($email, $suffix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function maskedEmail(): string
+    {
+        $email = (string) $this->email;
+        $parts = explode('@', $email, 2);
+        $local = $parts[0] ?? 'user';
+        $domain = $parts[1] ?? 'unknown';
+        $prefix = substr($local, 0, min(2, strlen($local)));
+
+        return $prefix.'***@'.$domain;
     }
 
     public function currentTenant(): BelongsTo
@@ -76,6 +120,10 @@ class User extends Authenticatable
 
     public function isMemberOfTenant(int $tenantId): bool
     {
+        if (! $this->isActiveAccount()) {
+            return false;
+        }
+
         return $this->memberships()
             ->where('tenant_id', $tenantId)
             ->where('status', 'ACTIVE')
@@ -84,6 +132,10 @@ class User extends Authenticatable
 
     public function roleSlugsForTenant(?int $tenantId = null): array
     {
+        if (! $this->isActiveAccount()) {
+            return [];
+        }
+
         $resolvedTenantId = $tenantId ?? $this->current_tenant_id;
         if (! $resolvedTenantId) {
             return [];
@@ -111,6 +163,10 @@ class User extends Authenticatable
 
     public function permissionSlugsForTenant(?int $tenantId = null): array
     {
+        if (! $this->isActiveAccount()) {
+            return [];
+        }
+
         $resolvedTenantId = $tenantId ?? $this->current_tenant_id;
         if (! $resolvedTenantId) {
             return [];
