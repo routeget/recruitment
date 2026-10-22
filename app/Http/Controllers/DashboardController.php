@@ -34,10 +34,10 @@ class DashboardController extends Controller
                 ? DB::table('applications')->where('tenant_id', $tenantId)->whereNotIn('current_stage', ['REJECTED', 'WITHDRAWN'])->count()
                 : 0,
             'accepted_offers' => ($tenantId && Schema::hasTable('offers'))
-                ? DB::table('offers')->where('tenant_id', $tenantId)->where('status', 'ACCEPTED')->count()
+                ? DB::table('offers')->where('tenant_id', $tenantId)->whereIn('status', ['ACCEPTED', 'accepted'])->count()
                 : 0,
-            'pending_hr_handovers' => ($tenantId && Schema::hasTable('hr_handovers'))
-                ? DB::table('hr_handovers')->where('tenant_id', $tenantId)->whereIn('status', ['BLOCKED', 'READY', 'QUEUED', 'RECONCILIATION_REQUIRED'])->count()
+            'pending_hr_handovers' => ($tenantId && Schema::hasTable('hr_validation_cases'))
+                ? DB::table('hr_validation_cases')->where('tenant_id', $tenantId)->whereNotIn('status', ['handed_over', 'HANDED_OVER', 'cancelled'])->count()
                 : 0,
         ];
 
