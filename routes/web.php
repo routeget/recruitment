@@ -29,10 +29,11 @@ Route::prefix('mcp/v1')->group(function () {
     Route::post('/invoke', [ApiV1AndMcpController::class, 'invokeMcpTool'])->name('mcp.v1.invoke');
 });
 
-// Increment 3: Public Career Portal, Sitemap & Robots
-Route::get('/careers', [CareerPortalController::class, 'index'])->name('careers.index');
-Route::get('/careers/{tenantSlug}/jobs/{jobSlug}', [CareerPortalController::class, 'showJob'])->name('careers.show');
-Route::post('/careers/{tenantSlug}/jobs/{jobSlug}/apply', [CareerPortalController::class, 'submitPublicApplication'])->name('careers.apply');
+// Public Career Portal: the domain root is the aggregate job board.
+Route::get('/', [CareerPortalController::class, 'index'])->name('careers.index');
+Route::get('/careers', [CareerPortalController::class, 'index'])->name('careers.legacy-index');
+Route::get('/careers/{tenantSlug}/jobs/{jobSlug}', [CareerPortalController::class, 'showJob'])->name('careers.legacy-show');
+Route::post('/careers/{tenantSlug}/jobs/{jobSlug}/apply', [CareerPortalController::class, 'submitPublicApplication'])->name('careers.legacy-apply');
 Route::get('/sitemap.xml', [CareerPortalController::class, 'sitemap'])->name('careers.sitemap');
 Route::get('/robots.txt', [CareerPortalController::class, 'robots'])->name('careers.robots');
 
@@ -48,12 +49,13 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     Route::post('/tenant/switch', [AuthController::class, 'switchTenant'])->name('tenant.switch');
 
-    Route::get('/', [DashboardController::class, 'index'])->name('home');
+    // Tenant application namespace. Platform-only identities are rejected by tenant.user.
+    Route::middleware('tenant.user')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-    Route::get('/system/diagnostics', [HealthController::class, 'diagnosticsPage'])->name('system.diagnostics');
+    Route::get('/organization', [DashboardController::class, 'index'])->name('organization.home');
 
-    // Increment 2: Organization Setup
-    Route::get('/organization', [OrganizationController::class, 'index'])
+    // Organization structure administration is a subpage, not the tenant landing route.
+    Route::get('/organization/setup', [OrganizationController::class, 'index'])
         ->middleware('permission:org.manage')
         ->name('organization.index');
     Route::post('/organization/legal-entities', [OrganizationController::class, 'storeLegalEntity'])
@@ -251,9 +253,14 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:audit.view')
         ->name('admin.audit.index');
 
-    // Platform Administration & Configuration Centre (Global Platform Super Admin Control Plane)
-    Route::prefix('platform-admin')->middleware('platform.superadmin')->name('platform-admin.')->group(function () {
+    }); // End tenant.user namespace.
+
+    // Platform Administration & Configuration Centre.
+    Route::prefix('platformadmin')->middleware('platform.admin')->name('platform-admin.')->group(function () {
         Route::get('/', [PlatformAdminController::class, 'index'])->name('index');
+        Route::get('/integrations/api', [PlatformAdminController::class, 'index'])->defaults('section', 'api-mcp')->name('integrations.api');
+        Route::get('/integrations/dynamics', [PlatformAdminController::class, 'index'])->defaults('section', 'integrations')->name('integrations.dynamics');
+        Route::get('/system/diagnostics', [HealthController::class, 'diagnosticsPage'])->name('system.diagnostics');
         Route::get('/section/{section}', [PlatformAdminController::class, 'index'])->name('section');
         Route::post('/settings/{section}', [PlatformAdminController::class, 'updateSection'])->name('settings.update');
         Route::post('/tenants', [PlatformAdminController::class, 'storeTenant'])->name('tenants.store');
@@ -265,3 +272,14 @@ Route::middleware('auth')->group(function () {
         Route::post('/security/rotate-password', [PlatformAdminController::class, 'rotatePassword'])->name('security.rotate-password');
     });
 });
+
+// Canonical tenant career portal URLs. Keep these after reserved/static application routes.
+Route::get('/{tenantSlug}/jobs/{jobSlug}', [CareerPortalController::class, 'showJob'])
+    ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+    ->name('careers.show');
+Route::post('/{tenantSlug}/jobs/{jobSlug}/apply', [CareerPortalController::class, 'submitPublicApplication'])
+    ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+    ->name('careers.apply');
+Route::get('/{tenantSlug}', [CareerPortalController::class, 'tenantIndex'])
+    ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+    ->name('tenant.careers.index');
