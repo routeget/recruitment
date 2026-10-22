@@ -77,8 +77,12 @@ class EntraSsoController extends Controller
                 ]);
             }
 
+            $defaultRedirect = $user->isActivePlatformAdmin()
+                ? route('platform-admin.index')
+                : route('organization.home');
+
             return redirect()
-                ->intended(route('dashboard'))
+                ->to($defaultRedirect)
                 ->with('status', 'Signed in with Microsoft Entra ID Single Sign-On.');
         } catch (EntraSsoException $e) {
             if ($request->expectsJson()) {
