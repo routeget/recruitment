@@ -125,8 +125,13 @@ class TenantIsolationAndAuthTest extends TestCase
             'platform_role' => 'platform_admin',
         ])->save();
 
-        $this->actingAs($platformAdmin)->get('/platformadmin')->assertOk();
-        $this->actingAs($platformAdmin)->get('/organization')->assertForbidden();
+        $this->post('/login', [
+            'email' => 'platform.superadmin@tringers.test',
+            'password' => 'AlphaDemo#2026!',
+        ])->assertRedirect(route('platform-admin.index'));
+        $this->assertAuthenticated();
+        $this->get('/platformadmin')->assertOk();
+        $this->get('/organization')->assertForbidden();
     }
 
     public function test_tenant_slug_is_immutable_after_creation(): void
