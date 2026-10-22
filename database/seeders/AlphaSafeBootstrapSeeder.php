@@ -253,7 +253,18 @@ class AlphaSafeBootstrapSeeder extends Seeder
             $defaultPasswordHash = Hash::make('AlphaDemo#2026!');
             $createdUsers = [];
 
+            $realSuperAdminExists = User::query()
+                ->where('is_platform_superadmin', true)
+                ->get()
+                ->contains(fn (User $candidate) => $candidate->isActivePlatformSuperAdmin() && ! $candidate->isSyntheticDemoIdentity());
+
             foreach ($demoUsers as $u) {
+                $existing = User::where('email', $u['email'])->first();
+                $wasExplicitlyRetiredOrSuspended = $existing !== null && (
+                    ($existing->status ?? 'ACTIVE') !== 'ACTIVE'
+                    || ($u['superadmin'] && ! $existing->is_platform_superadmin)
+                );
+
                 $user = User::updateOrCreate(
                     ['email' => $u['email']],
                     [
@@ -264,11 +275,14 @@ class AlphaSafeBootstrapSeeder extends Seeder
                     ]
                 );
 
-                $user->forceFill([
-                    'status' => 'ACTIVE',
-                    'is_platform_superadmin' => (bool) $u['superadmin'],
-                    'platform_role' => $u['superadmin'] ? 'platform_super_admin' : null,
-                ])->saveQuietly();
+                if (! $wasExplicitlyRetiredOrSuspended) {
+                    $grantDemoSuperAdmin = (bool) $u['superadmin'] && ! $realSuperAdminExists;
+                    $user->forceFill([
+                        'status' => 'ACTIVE',
+                        'is_platform_superadmin' => $grantDemoSuperAdmin,
+                        'platform_role' => $grantDemoSuperAdmin ? 'platform_super_admin' : null,
+                    ])->saveQuietly();
+                }
 
                 TenantMembership::updateOrCreate(
                     [
@@ -277,7 +291,7 @@ class AlphaSafeBootstrapSeeder extends Seeder
                         'role_id' => $roleMap[$u['role']]->id,
                     ],
                     [
-                        'status' => 'ACTIVE',
+                        'status' => $wasExplicitlyRetiredOrSuspended ? 'REVOKED' : 'ACTIVE',
                         'abac_scope' => ['scope_mode' => 'tenant_scoped'],
                     ]
                 );

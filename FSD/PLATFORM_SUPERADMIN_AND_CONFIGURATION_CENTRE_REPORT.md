@@ -82,14 +82,52 @@ Implemented in `app/Services/PlatformAdminService.php` and three Artisan command
 ## 4. Verification Summary
 
 - **Code Style**: `./vendor/bin/pint --test` — `PASS` (128 files).
-- **Automated Test Suite**: `./vendor/bin/phpunit` — `33 tests, 507 assertions, 0 failures, 0 errors` (including `tests/Feature/PlatformSuperAdminAndConfigCentreTest.php` with `4 tests, 128 assertions`).
+- **Automated Test Suite**: `./vendor/bin/phpunit` — `33 tests, 515 assertions, 0 failures, 0 errors` (including `tests/Feature/PlatformSuperAdminAndConfigCentreTest.php` with `4 tests, 136 assertions`).
 - **Dependency Vulnerability Audit**: `composer audit` — `0 advisories found`.
-- **Operator Provisioning Command for Live Owner**:
-  ```bash
-  cd /home/career/htdocs/career.tringers.com
-  php artisan platform:admin-provision \
-    --email="<REAL_OWNER_ORGANIZATIONAL_EMAIL>" \
-    --name="<REAL_OWNER_FULL_NAME>" \
-    --operator="<SSH_OPERATOR_OR_TICKET_ID>" \
-    --reason="Initial production Platform Super Admin provisioning"
-  ```
+
+---
+
+## 5. Phase 2 Read-Only Synthetic Identity Audit & Retirement Safeguards
+
+### 5.1 Sanitized Audit of All Existing User Accounts (`users` table)
+
+| User ID | Masked Email | Account Status | Global Super Admin (`is_platform_superadmin`) | Synthetic Domain | Tenant Memberships (`tenant:role(status)`) | Remediation / Disposition |
+|---|---|---|---|---|---|---|
+| `1` | `ad***@acme-demo.test` | `ACTIVE` | `NO` | `YES` (`.test`) | `acme-demo:tenant_admin(ACTIVE)` | Contained tenant-scoped demo persona (`acme-demo` only); zero global authority |
+| `2` | `re***@acme-demo.test` | `ACTIVE` | `NO` | `YES` (`.test`) | `acme-demo:recruiter(ACTIVE)` | Contained tenant-scoped demo persona (`acme-demo` only); zero global authority |
+| `3` | `ma***@acme-demo.test` | `ACTIVE` | `NO` | `YES` (`.test`) | `acme-demo:hiring_manager(ACTIVE)` | Contained tenant-scoped demo persona (`acme-demo` only); zero global authority |
+| `4` | `hr***@acme-demo.test` | `ACTIVE` | `NO` | `YES` (`.test`) | `acme-demo:hr_validator(ACTIVE)` | Contained tenant-scoped demo persona (`acme-demo` only); zero global authority |
+| `5` | `hr***@acme-demo.test` | `ACTIVE` | `NO` | `YES` (`.test`) | `acme-demo:hr_approver(ACTIVE)` | Contained tenant-scoped demo persona (`acme-demo` only); zero global authority |
+| `6` | `au***@acme-demo.test` | `ACTIVE` | `NO` | `YES` (`.test`) | `acme-demo:auditor(ACTIVE)` | Contained tenant-scoped demo persona (`acme-demo` only); zero global authority |
+| `7` | `ad***@globex-demo.test` | `ACTIVE` | `NO` | `YES` (`.test`) | `globex-demo:tenant_admin(ACTIVE)` | Contained tenant-scoped demo persona (`globex-demo` only); zero global authority |
+| `8` | `pl***@tringers.test` | `ACTIVE` (Pending Owner Provisioning) | `YES` | `YES` (`.test`) | `acme-demo:platform_superadmin(ACTIVE)` | **Retire via `php artisan platform:admin-revoke --suspend` immediately after real owner Super Admin is provisioned** |
+
+### 5.2 Seeder & Login Hardening Against Synthetic Admin Re-Enablement
+- **`database/seeders/AlphaSafeBootstrapSeeder.php`**: Hardened so that if a real non-synthetic Platform Super Admin already exists (`$realSuperAdminExists === true`) OR if `platform.superadmin@tringers.test` has been revoked/suspended (`status !== 'ACTIVE'` or `is_platform_superadmin === false`), re-running `AlphaSafeBootstrapSeeder` will **never** re-activate the account or re-grant `is_platform_superadmin = true`.
+- **`app/Http/Controllers/AuthController.php`**: Filtered `demoPersonas` on `/login` with `->where('status', 'ACTIVE')` so retired/suspended synthetic accounts are automatically removed from the login quick-fill panel.
+
+### 5.3 Two-Step Operator Sequence (Provision Real Owner -> Retire Synthetic Admin)
+```bash
+cd /home/career/htdocs/career.tringers.com
+
+# Step 1: Provision the real organizational Platform Super Admin (interactive hidden password prompt)
+php artisan platform:admin-provision \
+  --email="<REAL_OWNER_ORGANIZATIONAL_EMAIL>" \
+  --name="<REAL_OWNER_FULL_NAME>" \
+  --operator="<AUTHORIZED_OPERATOR_ID>" \
+  --reason="Initial production Platform Super Admin provisioning"
+
+# Step 2: Verify real Super Admin is active (must exit 0)
+php artisan platform:admin-status --json --require-real
+
+# Step 3: Retire and suspend the synthetic bootstrap Super Admin (pl***@tringers.test)
+php artisan platform:admin-revoke \
+  --email="platform.superadmin@tringers.test" \
+  --operator="<AUTHORIZED_OPERATOR_ID>" \
+  --reason="Retirement of synthetic bootstrap/test administrator from production" \
+  --suspend
+
+# Step 4: Confirm final sanitized state (active_real_superadmin_count=1, active_demo_superadmin_count=0, suspended_superadmin_count=1)
+php artisan platform:admin-status --json --require-real
+```
+

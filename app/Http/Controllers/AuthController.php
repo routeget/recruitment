@@ -29,6 +29,7 @@ class AuthController extends Controller
         $demoPersonas = [];
         if (app()->environment(['local', 'testing'])) {
             $demoPersonas = User::with(['currentTenant', 'memberships.role'])
+                ->where('status', 'ACTIVE')
                 ->whereIn('email', [
                     'admin@acme-demo.test',
                     'recruiter@acme-demo.test',

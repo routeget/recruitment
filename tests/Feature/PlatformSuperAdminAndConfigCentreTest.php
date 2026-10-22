@@ -227,6 +227,33 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
         ]);
         $this->assertSame(0, $exitRecovered);
         $this->assertTrue($primary->fresh()->isActivePlatformSuperAdmin());
+
+        // 7. Retire the synthetic bootstrap Super Admin (platform.superadmin@tringers.test) via CLI and verify seeder never re-enables it
+        $exitRetireSynthetic = Artisan::call('platform:admin-revoke', [
+            '--email' => 'platform.superadmin@tringers.test',
+            '--operator' => 'cli-operator',
+            '--reason' => 'Retirement of synthetic bootstrap/test administrator from production',
+            '--suspend' => true,
+            '--no-interaction' => true,
+        ]);
+        $this->assertSame(0, $exitRetireSynthetic);
+
+        $syntheticAdmin = User::where('email', 'platform.superadmin@tringers.test')->firstOrFail();
+        $this->assertFalse($syntheticAdmin->isActivePlatformSuperAdmin());
+        $this->assertSame('SUSPENDED', $syntheticAdmin->status);
+
+        // Re-running AlphaSafeBootstrapSeeder must NOT re-enable the retired synthetic administrator
+        $this->seed(AlphaSafeBootstrapSeeder::class);
+        $syntheticAfterSeed = User::where('email', 'platform.superadmin@tringers.test')->firstOrFail();
+        $this->assertFalse($syntheticAfterSeed->isActivePlatformSuperAdmin());
+        $this->assertSame('SUSPENDED', $syntheticAfterSeed->status);
+
+        // Retired synthetic account cannot authenticate or access /platform-admin
+        $this->post('/login', [
+            'email' => 'platform.superadmin@tringers.test',
+            'password' => 'AlphaDemo#2026!',
+        ])->assertSessionHasErrors('email');
+        $this->actingAs($syntheticAfterSeed)->get('/platform-admin')->assertStatus(403);
     }
 
     public function test_authorization_matrix_denies_guest_tenant_admin_recruiter_candidate_suspended_and_api_mcp_principals(): void

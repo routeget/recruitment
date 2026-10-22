@@ -19,16 +19,16 @@ Configuration: /home/career/htdocs/career.tringers.com/phpunit.xml
 
 .................................                                 33 / 33 (100%)
 
-Time: 00:18.454, Memory: 24.00 MB
+Time: 00:03.920, Memory: 24.00 MB
 
-OK (33 tests, 507 assertions)
+OK (33 tests, 515 assertions)
 ```
 
 ### Breakdown by Test Suite
 
-1. **`tests/Feature/PlatformSuperAdminAndConfigCentreTest.php` (4 comprehensive test suites — 128 assertions for `PSA-01` & `CFG-01`)**:
+1. **`tests/Feature/PlatformSuperAdminAndConfigCentreTest.php` (4 comprehensive test suites — 136 assertions for `PSA-01` & `CFG-01`)**:
    - **CLI Provisioning, Idempotency, Validation & Audit**: Verifies `platform:admin-provision` rejects synthetic `.test` emails and weak/demo passwords, creates a genuine active `PLATFORM_SUPER_ADMIN`, returns `UNCHANGED` on idempotent retry, requires `--promote-existing` to elevate existing users, requires `--recover-suspended` to reinstate suspended accounts, and records `AuditEvent` entries with `password_redacted: true`.
-   - **Last-Super-Admin Lockout Protection & Revocation**: Verifies `platform:admin-revoke` and `/platform-admin/admins/{id}/revoke` refuse to revoke or suspend the final active real Platform Super Admin (`LAST_SUPERADMIN_PROTECTION`) while committing a `DENIED` audit event, and succeed once a second real Super Admin is active.
+   - **Last-Super-Admin Lockout Protection, Synthetic Account Retirement & Revocation**: Verifies `platform:admin-revoke` and `/platform-admin/admins/{id}/revoke` refuse to revoke or suspend the final active real Platform Super Admin (`LAST_SUPERADMIN_PROTECTION`) while committing a `DENIED` audit event, succeed once a second real Super Admin is active, retire `platform.superadmin@tringers.test` via `--suspend`, and prove that re-running `AlphaSafeBootstrapSeeder` never re-enables a retired synthetic Super Admin.
    - **Strict Authorization Matrix**: Verifies `/platform-admin` and all POST actions reject unauthenticated guests (`302 /login` / `401`), `tenant_admin` (`403`), `recruiter` (`403`), users holding only the tenant-scoped `platform_superadmin` role in `tenant_memberships` (`403`), suspended Super Admins (`403`), and `ApiClientPrincipal` bearer tokens (`401`). Also verifies tenant admins cannot assign `platform_superadmin` via `/admin/tenants-iam/members` (`403`).
    - **Unified Configuration Centre (11 Sections), Optimistic Locking & Live Runtime Consumers**: Verifies all 11 `/platform-admin` sections render (`200 OK`), branding updates reflect immediately in `/careers`, `expected_version` optimistic locking blocks stale writes (`OPTIMISTIC_LOCK_CONFLICT`), high-risk settings require a justification reason, `ai.global_kill_switch` blocks `AiGatewayService`, `api.global_mcp_enabled=false` returns `503 MCP_GLOBALLY_DISABLED`, `webhooks.max_subscriptions_per_tenant` enforces subscription limits, `dynamics.global_live_writes_blocked` blocks live Dynamics writes (`BLOCKED_BY_PLATFORM_SAFETY_GATE`), and secret values are never exposed in HTML responses.
 2. **`tests/Feature/TenantIsolationAndAuthTest.php` (6 tests)**:

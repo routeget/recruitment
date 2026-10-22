@@ -15,15 +15,17 @@ class PlatformAdminRevokeCommand extends Command
                             {--email= : Email address of the Platform Super Admin to revoke}
                             {--operator= : Operator identifier executing this revocation}
                             {--reason= : Audited justification for revocation (minimum 10 characters)}
-                            {--suspend-account : Also suspend the user account across all sessions}';
+                            {--suspend-account : Also suspend the user account across all sessions}
+                            {--suspend : Alias for --suspend-account}';
 
     protected $description = 'Revoke Platform Super Admin authority with last-Super-Admin lockout protection (CLI-only, audited)';
 
     public function handle(PlatformAdminService $adminService): int
     {
-        $email = strtolower(trim((string) ($this->option('email') ?: $this->ask('Target Platform Super Admin email address'))));
-        $operator = (string) ($this->option('operator') ?: $this->ask('Operator identifier'));
-        $reason = (string) ($this->option('reason') ?: $this->ask('Audited revocation justification (min 10 chars)'));
+        $canPrompt = ! $this->option('no-interaction') && $this->input->isInteractive();
+        $email = strtolower(trim((string) ($this->option('email') ?: ($canPrompt ? $this->ask('Target Platform Super Admin email address') : ''))));
+        $operator = (string) ($this->option('operator') ?: ($canPrompt ? $this->ask('Operator identifier') : ''));
+        $reason = (string) ($this->option('reason') ?: ($canPrompt ? $this->ask('Audited revocation justification (min 10 chars)') : ''));
 
         /** @var User|null $targetUser */
         $targetUser = User::query()->where('email', $email)->first();
@@ -38,7 +40,7 @@ class PlatformAdminRevokeCommand extends Command
                 targetUser: $targetUser,
                 operatorIdentifier: $operator,
                 reason: $reason,
-                suspendAccount: (bool) $this->option('suspend-account'),
+                suspendAccount: (bool) ($this->option('suspend-account') || $this->option('suspend')),
             );
 
             $this->info(sprintf(
