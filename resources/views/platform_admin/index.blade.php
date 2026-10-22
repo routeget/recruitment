@@ -272,7 +272,8 @@
                     @foreach($tenants as $t)
                         <tr>
                             <td>
-                                <code>#{{ $t->id }}</code> <strong>{{ $t->slug }}</strong>
+                                <code>#{{ $t->id }}</code> <a href="{{ url('/'.$t->slug) }}" target="_blank" rel="noopener noreferrer" class="fw-semibold text-decoration-none">{{ $t->slug }}</a>
+                                <div class="small text-muted">career.tringers.com/{{ $t->slug }}/</div>
                                 @if($t->is_demo)
                                     <span class="badge bg-warning text-dark">DEMO</span>
                                 @endif
