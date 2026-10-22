@@ -47,10 +47,9 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
-    Route::post('/tenant/switch', [AuthController::class, 'switchTenant'])->name('tenant.switch');
-
     // Tenant application namespace. Platform-only identities are rejected by tenant.user.
     Route::middleware('tenant.user')->group(function () {
+    Route::post('/tenant/switch', [AuthController::class, 'switchTenant'])->name('tenant.switch');
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/organization', [DashboardController::class, 'index'])->name('organization.home');
 
