@@ -23,7 +23,7 @@ class AuthController extends Controller
     public function showLogin(EntraSsoService $entraSso): View|RedirectResponse
     {
         if (Auth::check()) {
-            return redirect()->route('dashboard');
+            return redirect()->route(Auth::user()?->isActivePlatformAdmin() ? 'platform-admin.index' : 'organization.home');
         }
 
         $demoPersonas = [];
@@ -156,12 +156,12 @@ class AuthController extends Controller
             actorUserId: $user->id
         );
 
-        $defaultRedirect = ($user->isActivePlatformSuperAdmin() && $tenant === null && Route::has('platform-admin.index'))
-            ? route('platform-admin.index')
-            : route('dashboard');
+        // Namespace is selected from the authenticated platform authority, never from an untrusted intended URL.
+        $isPlatformAdmin = $user->isActivePlatformAdmin();
+        $defaultRedirect = $isPlatformAdmin ? route('platform-admin.index') : route('organization.home');
 
-        return redirect()->intended($defaultRedirect)
-            ->with('status', 'Authenticated into '.($tenant?->name ?? 'Platform Administration & Configuration Centre').'.');
+        return redirect()->to($defaultRedirect)
+            ->with('status', 'Authenticated into '.($isPlatformAdmin ? 'Platform Administration & Configuration Centre' : ($tenant?->name ?? 'your organization')).'.');
     }
 
     public function logout(Request $request, AuditService $audit): RedirectResponse
