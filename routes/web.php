@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\AiGatewayController;
 use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\ApiV1AndMcpController;
 use App\Http\Controllers\AuditGovernanceController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CandidateAndApplicationController;
@@ -8,6 +10,7 @@ use App\Http\Controllers\CareerPortalController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EvaluationAndDecisionController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\IntegrationsAndDynamicsController;
 use App\Http\Controllers\JobPostingController;
 use App\Http\Controllers\OfferAndHrHandoverController;
 use App\Http\Controllers\OrganizationController;
@@ -16,6 +19,12 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/health', [HealthController::class, 'jsonHealth'])->name('health');
 Route::get('/setup/status', [AuthController::class, 'setupStatus'])->name('setup.status');
+
+// Increment 6: Governed MCP Server (/mcp/v1)
+Route::prefix('mcp/v1')->group(function () {
+    Route::get('/tools', [ApiV1AndMcpController::class, 'listMcpTools'])->name('mcp.v1.tools');
+    Route::post('/invoke', [ApiV1AndMcpController::class, 'invokeMcpTool'])->name('mcp.v1.invoke');
+});
 
 // Increment 3: Public Career Portal, Sitemap & Robots
 Route::get('/careers', [CareerPortalController::class, 'index'])->name('careers.index');
@@ -175,6 +184,40 @@ Route::middleware('auth')->group(function () {
         ->name('hr-handover.dispatch');
     Route::post('/hr-handover/handovers/{handover}/reconcile', [OfferAndHrHandoverController::class, 'reconcileHandover'])
         ->name('hr-handover.reconcile');
+
+    // Increments 6, 7 & 8: AI Gateway, API Platform, Webhooks, MCP & Dynamics 365 Connector
+    Route::get('/ai', [AiGatewayController::class, 'index'])
+        ->middleware('permission:ai.use')
+        ->name('ai.index');
+    Route::post('/ai/execute', [AiGatewayController::class, 'executeTask'])
+        ->middleware('permission:ai.use')
+        ->name('ai.execute');
+    Route::post('/ai/runs/{run}/review', [AiGatewayController::class, 'reviewTaskRun'])
+        ->middleware('permission:ai.use')
+        ->name('ai.runs.review');
+    Route::post('/ai/providers/{provider}', [AiGatewayController::class, 'updateProviderConfig'])
+        ->middleware('permission:ai.admin')
+        ->name('ai.providers.update');
+
+    Route::get('/integrations/api', [IntegrationsAndDynamicsController::class, 'apiAndMcpIndex'])
+        ->middleware('permission:api.admin')
+        ->name('integrations.api.index');
+    Route::post('/integrations/api/clients', [IntegrationsAndDynamicsController::class, 'storeApiClient'])
+        ->middleware('permission:api.admin')
+        ->name('integrations.api.clients.store');
+    Route::post('/integrations/api/webhooks', [IntegrationsAndDynamicsController::class, 'storeWebhook'])
+        ->middleware('permission:api.admin')
+        ->name('integrations.api.webhooks.store');
+
+    Route::get('/integrations/dynamics', [IntegrationsAndDynamicsController::class, 'dynamicsIndex'])
+        ->middleware('permission:dynamics.admin')
+        ->name('dynamics.index');
+    Route::post('/integrations/dynamics/config', [IntegrationsAndDynamicsController::class, 'updateDynamicsConfig'])
+        ->middleware('permission:dynamics.admin')
+        ->name('dynamics.config.update');
+    Route::post('/integrations/dynamics/cases/{case}/dry-run', [IntegrationsAndDynamicsController::class, 'dryRunValidate'])
+        ->middleware('permission:dynamics.admin')
+        ->name('dynamics.dry-run');
 
     // Increment 1: IAM & Audit
     Route::get('/admin/tenants-iam', [AuditGovernanceController::class, 'iamIndex'])

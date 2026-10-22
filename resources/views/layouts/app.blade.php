@@ -197,7 +197,7 @@
                                     </a>
                                 </li>
                             @endif
-                            @if(Route::has('hr-handover.index') && (in_array('hr.validate', $activeUserPermissions ?? []) || in_array('hr.approve_handover', $activeUserPermissions ?? []) || in_array('hr.dispatch_handover', $activeUserPermissions ?? []) || in_array('requisitions.view', $activeUserPermissions ?? [])))
+                            @if(Route::has('hr-handover.index') && (in_array('hr_validation.manage', $activeUserPermissions ?? []) || in_array('hr_handover.approve', $activeUserPermissions ?? []) || in_array('hr_handover.dispatch', $activeUserPermissions ?? []) || in_array('requisitions.view', $activeUserPermissions ?? [])))
                                 <li class="nav-item">
                                     <a class="nav-link {{ request()->routeIs('hr-handover.*') ? 'active' : '' }}" href="{{ route('hr-handover.index') }}">
                                         HR Validation &amp; Handover Gate

@@ -39,6 +39,11 @@ class TenantContextService
         $this->activeTenant = $tenantId ? Tenant::find($tenantId) : null;
     }
 
+    public function setActiveTenantId(?int $tenantId): void
+    {
+        $this->setActiveTenantById($tenantId);
+    }
+
     public function hasActiveTenant(): bool
     {
         return $this->activeTenant !== null;
@@ -52,6 +57,16 @@ class TenantContextService
     public function getActiveTenantId(): ?int
     {
         return $this->activeTenant?->id;
+    }
+
+    public function requireTenantId(): int
+    {
+        $tenantId = $this->getActiveTenantId();
+        if (! $tenantId) {
+            throw new AccessDeniedHttpException('Active tenant context is required.');
+        }
+
+        return (int) $tenantId;
     }
 
     public function setActiveApiScopes(array $scopes): void
