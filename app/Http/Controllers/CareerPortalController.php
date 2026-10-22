@@ -4,20 +4,29 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Models\Application;
+use App\Models\CandidateDocument;
 use App\Models\CareerPortalConfiguration;
 use App\Models\JobPosting;
 use App\Models\Location;
+use App\Models\ResumeParseJob;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\Ai\ResumeContentAnalyzer;
+use App\Services\Ai\ResumeTextExtractorService;
+use App\Services\AiGatewayService;
 use App\Services\AuditService;
 use App\Services\CandidateAndApplicationService;
 use App\Services\CareerPortalConfigurationService;
+use App\Services\ResumeParsingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Throwable;
 
 class CareerPortalController extends Controller
 {
@@ -195,7 +204,7 @@ class CareerPortalController extends Controller
         return $this->index($request, $tenant);
     }
 
-    public function showJob(string $tenantSlug, string $jobSlug): View
+    public function showJob(Request $request, string $tenantSlug, string $jobSlug): View
     {
         $tenant = Tenant::where('slug', $tenantSlug)->where('status', 'ACTIVE')->firstOrFail();
 
@@ -212,20 +221,169 @@ class CareerPortalController extends Controller
 
         $portalConfig = $this->portalService->getResolvedPublicPayload($tenant);
 
+        $recentApplication = null;
+        $recentParseJob = null;
+        $appUuid = (string) ($request->query('application_uuid') ?: session('recent_application_uuid', ''));
+        if ($appUuid !== '' && Schema::hasTable('resume_parse_jobs')) {
+            $recentApplication = Application::withoutTenantScope()
+                ->with('candidate')
+                ->where('tenant_id', $tenant->id)
+                ->where('job_posting_id', $job->id)
+                ->where('uuid', $appUuid)
+                ->first();
+
+            if ($recentApplication) {
+                $recentParseJob = ResumeParseJob::withoutTenantScope()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('application_id', $recentApplication->id)
+                    ->latest('id')
+                    ->first();
+            }
+        }
+
         return view('careers.show', [
             'tenant' => $tenant,
             'scopeTenant' => $tenant,
             'job' => $job,
             'portalConfig' => $portalConfig,
             'jsonLd' => $job->toJobPostingSchemaJsonLd(),
+            'prefilledResume' => session('prefilled_resume_data'),
+            'recentApplication' => $recentApplication,
+            'recentParseJob' => $recentParseJob,
         ]);
+    }
+
+    /**
+     * Candidate pre-submission AI resume extraction & form pre-fill.
+     * Enforces mandatory privacy consent before processing resume content.
+     */
+    public function extractResumeForApplication(
+        Request $request,
+        string $tenantSlug,
+        string $jobSlug,
+        ResumeTextExtractorService $extractor,
+        AiGatewayService $aiGateway,
+        ResumeContentAnalyzer $analyzer,
+    ): RedirectResponse {
+        $tenant = Tenant::where('slug', $tenantSlug)->where('status', 'ACTIVE')->firstOrFail();
+
+        $job = JobPosting::withoutTenantScope()
+            ->where('tenant_id', $tenant->id)
+            ->where('slug', $jobSlug)
+            ->where('status', JobPosting::STATUS_PUBLISHED)
+            ->firstOrFail();
+
+        if ($job->expires_at && $job->expires_at->isPast()) {
+            abort(404, 'This job posting has expired.');
+        }
+
+        $request->validate([
+            'consent_given' => ['accepted'],
+            'resume_file' => ['required', 'file', 'max:5120'],
+        ], [
+            'consent_given.accepted' => 'VALIDATION_ERROR: Candidate privacy consent is mandatory before AI resume extraction or personal data processing.',
+        ]);
+
+        $file = $request->file('resume_file');
+        $ext = strtolower($file->getClientOriginalExtension());
+        if (! in_array($ext, ['pdf', 'doc', 'docx', 'txt'], true)) {
+            throw ValidationException::withMessages([
+                'resume_file' => ['VALIDATION_ERROR: Only PDF, DOC, DOCX, and TXT resume files are supported for AI extraction.'],
+            ]);
+        }
+
+        $rawBytes = (string) file_get_contents($file->getRealPath());
+        if (
+            str_starts_with($rawBytes, '<?php')
+            || str_starts_with($rawBytes, "\x7fELF")
+            || str_starts_with($rawBytes, "MZ\x90\x00")
+            || str_starts_with($rawBytes, '#!/')
+        ) {
+            throw ValidationException::withMessages([
+                'resume_file' => ['VALIDATION_ERROR: Unsafe or executable file content rejected.'],
+            ]);
+        }
+
+        try {
+            $extraction = match ($ext) {
+                'pdf' => $extractor->extractFromPdfBytes($rawBytes),
+                'docx' => $extractor->extractFromDocxBytes($rawBytes),
+                'doc' => $extractor->extractFromLegacyDocBytes($rawBytes),
+                default => $extractor->extractFromPlainTextBytes($rawBytes),
+            };
+        } catch (Throwable $e) {
+            return redirect()
+                ->route('careers.show', ['tenantSlug' => $tenant->slug, 'jobSlug' => $job->slug])
+                ->withErrors(['resume_file' => $e->getMessage()]);
+        }
+
+        if ($extraction['requires_manual_review'] || trim($extraction['text']) === '') {
+            return redirect()
+                ->route('careers.show', ['tenantSlug' => $tenant->slug, 'jobSlug' => $job->slug])
+                ->withErrors(['resume_file' => ($extraction['warning_code'] ?? 'REVIEW_REQUIRED').': '.($extraction['warning_message'] ?? 'Scanned or image-only document requires manual entry.')]);
+        }
+
+        $securityScan = $analyzer->detectAndNeutralizePromptInjection($extraction['text']);
+
+        try {
+            $run = $aiGateway->executeTask(
+                taskType: 'resume.extract',
+                providerKey: 'auto',
+                rawInputText: $securityScan['clean_text'],
+                actor: null,
+                tenantId: (int) $tenant->id,
+                options: [
+                    'preserve_candidate_contact' => true,
+                    'entity_type' => 'PublicResumePrefill',
+                    'entity_id' => $job->id,
+                ]
+            );
+            $parsed = (array) ($run->structured_output ?? []);
+        } catch (Throwable) {
+            $parsed = $analyzer->extractStructuredResume($securityScan['clean_text']);
+        }
+
+        $fullName = trim((string) ($parsed['full_name'] ?? ''));
+        $firstName = trim((string) ($parsed['first_name'] ?? ''));
+        $lastName = trim((string) ($parsed['last_name'] ?? ''));
+        if ($fullName !== '' && ($firstName === '' || $lastName === '')) {
+            $parts = preg_split('/\s+/', $fullName) ?: [];
+            $firstName = (string) array_shift($parts);
+            $lastName = implode(' ', $parts);
+        }
+
+        $prefill = [
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'full_name' => $fullName,
+            'email' => $parsed['contact']['email'] ?? ($parsed['emails'][0] ?? ''),
+            'phone' => $parsed['contact']['phone'] ?? ($parsed['phones'][0] ?? ''),
+            'location_city' => $parsed['contact']['location_city'] ?? ($parsed['location'] ?? ''),
+            'country_code' => $parsed['contact']['country_code'] ?? ($parsed['country_code'] ?? 'US'),
+            'current_title' => $parsed['current_title'] ?? ($parsed['work_experience'][0]['job_title'] ?? ($parsed['work_experience'][0]['title'] ?? '')),
+            'years_experience' => $parsed['years_experience'] ?? ($parsed['total_years_experience'] ?? 0),
+            'skills' => implode(', ', (array) ($parsed['skills'] ?? [])),
+            'professional_summary' => $parsed['professional_summary'] ?? '',
+            'work_experience' => $parsed['work_experience'] ?? [],
+            'education' => $parsed['education'] ?? [],
+            'certifications' => $parsed['certifications'] ?? [],
+            'missing_fields' => $parsed['missing_fields'] ?? [],
+            'prompt_injection_detected' => $securityScan['detected'],
+            'consent_given' => true,
+        ];
+
+        return redirect()
+            ->route('careers.show', ['tenantSlug' => $tenant->slug, 'jobSlug' => $job->slug])
+            ->with('prefilled_resume_data', $prefill)
+            ->with('status', 'Resume analyzed by AI. Please review and verify the extracted fields below before submitting your application.');
     }
 
     public function submitPublicApplication(
         Request $request,
         string $tenantSlug,
         string $jobSlug,
-        CandidateAndApplicationService $service
+        CandidateAndApplicationService $service,
+        ResumeParsingService $resumeParsing,
     ): RedirectResponse {
         $tenant = Tenant::where('slug', $tenantSlug)->where('status', 'ACTIVE')->firstOrFail();
 
@@ -250,6 +408,7 @@ class CareerPortalController extends Controller
             'current_title' => ['nullable', 'string', 'max:150'],
             'years_experience' => ['nullable', 'integer', 'min:0', 'max:60'],
             'skills' => ['nullable', 'string', 'max:400'],
+            'professional_summary' => ['nullable', 'string', 'max:3000'],
             'cover_note' => ['nullable', 'string', 'max:2000'],
             'consent_given' => ['accepted'],
             'resume_file' => ['nullable', 'file', 'max:5120'],
@@ -261,21 +420,160 @@ class CareerPortalController extends Controller
             'source_channel' => 'CAREER_PORTAL',
         ], $tenant->id);
 
+        if (! empty($validated['professional_summary']) && Schema::hasColumn('candidates', 'professional_summary')) {
+            $candidate->update(['professional_summary' => $validated['professional_summary']]);
+        }
+
         $application = $service->submitApplication($job, $candidate, [
             'cover_note' => $validated['cover_note'] ?? null,
         ]);
 
+        $parseStatusNote = '';
         if ($request->hasFile('resume_file')) {
-            $service->storePrivateDocument(
+            $doc = $service->storePrivateDocument(
                 $candidate,
                 $request->file('resume_file'),
                 'RESUME',
                 $application->id
             );
+
+            if (Schema::hasTable('resume_parse_jobs')) {
+                $parseJob = $resumeParsing->parseDocument($candidate, $doc, $application->id, null);
+                $resumeParsing->evaluateApplicationMatch($application->fresh(['jobPosting']), $candidate->fresh());
+                $parseStatusNote = " Resume AI parsing status: {$parseJob->status}.";
+                session()->flash('recent_parse_job_uuid', $parseJob->uuid);
+            }
         }
 
+        session()->flash('recent_application_uuid', $application->uuid);
+
         return redirect()->route('careers.show', ['tenantSlug' => $tenant->slug, 'jobSlug' => $job->slug])
-            ->with('status', "Application {$application->application_number} received for {$job->title}. Status: {$application->candidate_visible_status}.");
+            ->with('status', "Application {$application->application_number} received for {$job->title}. Status: {$application->candidate_visible_status}.{$parseStatusNote}");
+    }
+
+    /**
+     * Candidate-facing resume extraction review & correction view.
+     */
+    public function showCandidateResumeReview(string $tenantSlug, string $applicationUuid): View
+    {
+        $tenant = Tenant::where('slug', $tenantSlug)->where('status', 'ACTIVE')->firstOrFail();
+
+        $application = Application::withoutTenantScope()
+            ->with(['candidate', 'jobPosting'])
+            ->where('tenant_id', $tenant->id)
+            ->where('uuid', $applicationUuid)
+            ->firstOrFail();
+
+        $parseJob = ResumeParseJob::withoutTenantScope()
+            ->where('tenant_id', $tenant->id)
+            ->where('application_id', $application->id)
+            ->latest('id')
+            ->first();
+
+        $portalConfig = $this->portalService->getResolvedPublicPayload($tenant);
+
+        return view('careers.resume_review', [
+            'tenant' => $tenant,
+            'scopeTenant' => $tenant,
+            'application' => $application,
+            'candidate' => $application->candidate,
+            'job' => $application->jobPosting,
+            'parseJob' => $parseJob,
+            'effectiveData' => $parseJob ? $parseJob->getEffectiveResumeData() : [],
+            'portalConfig' => $portalConfig,
+        ]);
+    }
+
+    /**
+     * Candidate submits reviewed/corrected structured resume fields with explicit consent.
+     */
+    public function submitCandidateResumeReview(
+        Request $request,
+        string $tenantSlug,
+        string $applicationUuid,
+        ResumeParsingService $resumeParsing,
+    ): RedirectResponse {
+        $tenant = Tenant::where('slug', $tenantSlug)->where('status', 'ACTIVE')->firstOrFail();
+
+        $application = Application::withoutTenantScope()
+            ->with(['candidate', 'jobPosting'])
+            ->where('tenant_id', $tenant->id)
+            ->where('uuid', $applicationUuid)
+            ->firstOrFail();
+
+        $parseJob = ResumeParseJob::withoutTenantScope()
+            ->where('tenant_id', $tenant->id)
+            ->where('application_id', $application->id)
+            ->latest('id')
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'consent_given' => ['accepted'],
+            'full_name' => ['required', 'string', 'max:190'],
+            'email' => ['required', 'email', 'max:190'],
+            'phone' => ['nullable', 'string', 'max:40'],
+            'location' => ['nullable', 'string', 'max:120'],
+            'country_code' => ['nullable', 'string', 'size:2'],
+            'current_title' => ['nullable', 'string', 'max:150'],
+            'total_years_experience' => ['nullable', 'integer', 'min:0', 'max:60'],
+            'professional_summary' => ['nullable', 'string', 'max:3000'],
+            'skills' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'consent_given.accepted' => 'VALIDATION_ERROR: Candidate privacy consent is required before saving reviewed profile data.',
+        ]);
+
+        $candidate = $application->candidate;
+        $resumeParsing->applyCorrections(
+            parseJob: $parseJob,
+            candidate: $candidate,
+            correctedPayload: $validated,
+            reviewer: null,
+            isCandidateReview: true,
+        );
+
+        $resumeParsing->evaluateApplicationMatch($application->fresh(['jobPosting']), $candidate->fresh());
+
+        return redirect()
+            ->route('careers.application.resume-review', ['tenantSlug' => $tenant->slug, 'applicationUuid' => $application->uuid])
+            ->with('status', 'Your reviewed resume profile details have been verified and saved to your application.');
+    }
+
+    /**
+     * Candidate triggers resume re-processing for their application.
+     */
+    public function reprocessCandidateResume(
+        string $tenantSlug,
+        string $applicationUuid,
+        ResumeParsingService $resumeParsing,
+    ): RedirectResponse {
+        $tenant = Tenant::where('slug', $tenantSlug)->where('status', 'ACTIVE')->firstOrFail();
+
+        $application = Application::withoutTenantScope()
+            ->with(['candidate', 'jobPosting'])
+            ->where('tenant_id', $tenant->id)
+            ->where('uuid', $applicationUuid)
+            ->firstOrFail();
+
+        $doc = CandidateDocument::withoutTenantScope()
+            ->where('tenant_id', $tenant->id)
+            ->where('candidate_id', $application->candidate_id)
+            ->where('document_type', 'RESUME')
+            ->latest('id')
+            ->firstOrFail();
+
+        $parseJob = $resumeParsing->parseDocument(
+            candidate: $application->candidate,
+            document: $doc,
+            applicationId: $application->id,
+            actor: null,
+            forceReprocess: true,
+        );
+
+        $resumeParsing->evaluateApplicationMatch($application->fresh(['jobPosting']), $application->candidate->fresh());
+
+        return redirect()
+            ->route('careers.application.resume-review', ['tenantSlug' => $tenant->slug, 'applicationUuid' => $application->uuid])
+            ->with('status', "Resume re-processed cleanly (Status: {$parseJob->status}).");
     }
 
     public function legalPage(string $page): View

@@ -23,6 +23,11 @@
     </div>
 
     <div class="d-flex gap-2">
+        @if($application->candidate)
+            <a href="{{ route('candidates.show', $application->candidate->id) }}" class="btn btn-outline-dark btn-sm">
+                Candidate CRM &amp; Resume Review
+            </a>
+        @endif
         @if(Route::has('evaluations.index'))
             <a href="{{ route('evaluations.index', ['application_id' => $application->id]) }}" class="btn btn-outline-primary btn-sm">
                 Screening, Interviews &amp; Decision
@@ -32,6 +37,101 @@
             <a href="{{ route('offers.index', ['application_id' => $application->id]) }}" class="btn btn-outline-success btn-sm">
                 Offer Management
             </a>
+        @endif
+    </div>
+</div>
+
+@if($errors->has('ai_match'))
+    <div class="alert alert-danger">{{ $errors->first('ai_match') }}</div>
+@endif
+
+{{-- Explainable AI Candidate-to-Job Matching Panel --}}
+<div class="card stat-card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <span class="fw-bold">Explainable AI Candidate-to-Job Match &amp; Evidence Analysis</span>
+            <div class="small text-muted">Separates factual evidence extracted from the candidate's resume from AI match interpretation.</div>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            @if($application->ai_match_score !== null)
+                <span class="badge bg-primary fs-6">Match Score: {{ $application->ai_match_score }}%</span>
+            @endif
+            @if($application->ai_match_reviewed)
+                <span class="badge bg-success">Human-Reviewed ({{ $application->aiMatchReviewer?->name ?? 'Recruiter' }})</span>
+            @elseif($application->ai_match_score !== null)
+                <form method="POST" action="{{ route('applications.ai-match.review', $application->id) }}">
+                    @csrf
+                    <button type="submit" class="btn btn-sm btn-outline-success">Confirm Human Review</button>
+                </form>
+            @endif
+            <form method="POST" action="{{ route('applications.ai-match', $application->id) }}">
+                @csrf
+                <button type="submit" class="btn btn-sm btn-outline-primary">
+                    {{ $application->ai_match_score !== null ? 'Re-Evaluate AI Match' : 'Run AI Job Match' }}
+                </button>
+            </form>
+        </div>
+    </div>
+    <div class="card-body">
+        @if(!empty($application->ai_match_data))
+            @php
+                $matchData = (array) $application->ai_match_data;
+                $facts = (array) ($matchData['extracted_facts'] ?? []);
+                $interp = (array) ($matchData['ai_interpretation'] ?? []);
+                $missingFlags = (array) ($matchData['missing_evidence_flags'] ?? []);
+            @endphp
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="p-3 bg-light rounded border h-100 small">
+                        <div class="fw-bold text-dark mb-2">1. Extracted Resume Facts (Objective Evidence)</div>
+                        <div class="mb-1"><strong>Current Role:</strong> {{ $facts['candidate_title'] ?? ($application->candidate?->current_title ?? 'Not stated') }}</div>
+                        <div class="mb-2">
+                            <strong>Experience:</strong> {{ $facts['candidate_years_experience'] ?? ($application->candidate?->years_experience ?? 0) }} yrs
+                            (Target: {{ $facts['required_years_experience'] ?? 3 }}+ yrs)
+                        </div>
+                        <div class="mb-2">
+                            <strong>Matched Job Skills:</strong>
+                            @forelse((array) ($facts['matched_skills'] ?? $matchData['matched_skills'] ?? []) as $ms)
+                                <span class="badge bg-success me-1">{{ $ms }}</span>
+                            @empty
+                                <span class="text-muted">None matched</span>
+                            @endforelse
+                        </div>
+                        <div>
+                            <strong>Missing / Unstated Job Skills:</strong>
+                            @forelse((array) ($facts['missing_required_skills'] ?? $matchData['missing_evidence'] ?? []) as $mis)
+                                <span class="badge bg-warning text-dark me-1">{{ $mis }}</span>
+                            @empty
+                                <span class="text-success">All required job skills present</span>
+                            @endforelse
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="p-3 bg-light rounded border h-100 small">
+                        <div class="fw-bold text-dark mb-2">2. AI Interpretation &amp; Screening Recommendation</div>
+                        <div class="mb-2">
+                            <strong>Recommendation:</strong>
+                            <span class="badge bg-info text-dark">{{ $interp['recommendation'] ?? ($matchData['recommendation'] ?? 'SCREENING_REVIEW') }}</span>
+                        </div>
+                        <p class="text-secondary mb-2">{{ $interp['explanation'] ?? ($matchData['explanation'] ?? '') }}</p>
+                        @if(!empty($missingFlags))
+                            <div class="text-danger">
+                                <strong>Missing Evidence Flags:</strong>
+                                <ul class="mb-0 ps-3">
+                                    @foreach($missingFlags as $flag)
+                                        <li>{{ $flag }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        @else
+            <div class="text-muted small">
+                Click <strong>Run AI Job Match</strong> above to evaluate the candidate's parsed resume facts against {{ $application->jobPosting?->title }} requirements.
+            </div>
         @endif
     </div>
 </div>
@@ -67,7 +167,8 @@
             <div class="card-body small">
                 <p class="mb-2">
                     <strong>Email:</strong> <code>{{ $application->candidate?->email }}</code> |
-                    <strong>Experience:</strong> {{ $application->candidate?->years_experience }} yrs
+                    <strong>Experience:</strong> {{ $application->candidate?->years_experience }} yrs |
+                    <strong>Resume Parse:</strong> <span class="badge bg-secondary">{{ $application->candidate?->resume_parse_status ?? 'NONE' }}</span>
                 </p>
                 <p class="mb-2"><strong>Cover Note:</strong> {{ $application->cover_note ?? '—' }}</p>
                 <hr>
@@ -82,7 +183,15 @@
                                 <span class="badge bg-secondary me-1">{{ $doc->document_type }}</span>
                                 {{ $doc->original_filename }}
                             </span>
-                            <a href="{{ route('documents.download', $doc->id) }}" class="btn btn-sm btn-outline-dark">Download</a>
+                            <div class="d-flex gap-1">
+                                <a href="{{ route('documents.download', $doc->id) }}" class="btn btn-sm btn-outline-dark">Download</a>
+                                @if($doc->document_type === 'RESUME' && in_array('candidates.manage', $activeUserPermissions ?? []))
+                                    <form method="POST" action="{{ route('candidates.documents.parse', [$application->candidate->id, $doc->id]) }}">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-outline-primary">Reprocess AI</button>
+                                    </form>
+                                @endif
+                            </div>
                         </li>
                     @empty
                         <li class="list-group-item px-0 text-muted">No documents attached.</li>

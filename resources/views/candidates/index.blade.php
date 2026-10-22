@@ -12,7 +12,7 @@
             </ol>
         </nav>
         <h1 class="h3 fw-bold mb-0">Candidate CRM, Consent &amp; Private Document Repository</h1>
-        <p class="text-muted small mb-0">Tenant-scoped candidate records with deduplication by email, consent tracking, and SHA-256 verified private document storage.</p>
+        <p class="text-muted small mb-0">Tenant-scoped candidate records with deduplication by email, AI-assisted resume parsing, consent tracking, and SHA-256 verified private document storage.</p>
     </div>
     @if(in_array('candidates.manage', $activeUserPermissions ?? []))
         <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#newCandidateCollapse">
@@ -24,7 +24,7 @@
 @if(in_array('candidates.manage', $activeUserPermissions ?? []))
 <div class="collapse mb-4" id="newCandidateCollapse">
     <div class="card stat-card border-primary">
-        <div class="card-header bg-primary bg-opacity-10 fw-bold">Register / Deduplicate Candidate Profile</div>
+        <div class="card-header bg-primary bg-opacity-10 fw-bold">Register / Deduplicate Candidate Profile (With Automated AI Resume Parsing)</div>
         <div class="card-body">
             <form method="POST" action="{{ route('candidates.store') }}" enctype="multipart/form-data" class="row g-3">
                 @csrf
@@ -66,7 +66,7 @@
                     <input type="text" id="country_code" name="country_code" class="form-control form-control-sm" value="US" maxlength="2" required>
                 </div>
                 <div class="col-md-6">
-                    <label for="resume_file" class="form-label small fw-semibold">Private Resume File (PDF/DOCX/TXT)</label>
+                    <label for="resume_file" class="form-label small fw-semibold">Private Resume File (PDF/DOCX/DOC/TXT — Automatically Parsed by AI)</label>
                     <input type="file" id="resume_file" name="resume_file" class="form-control form-control-sm" accept=".pdf,.doc,.docx,.txt">
                 </div>
                 <div class="col-md-6 d-flex align-items-end justify-content-between">
@@ -85,11 +85,24 @@
 <div class="card stat-card mb-4">
     <div class="card-body">
         <form method="GET" action="{{ route('candidates.index') }}" class="row g-2 align-items-end">
-            <div class="col-md-9">
-                <label for="q" class="form-label small fw-semibold">Search Candidate Name, Email, or Code</label>
-                <input type="text" id="q" name="q" value="{{ request('q') }}" class="form-control form-control-sm" placeholder="CAND-2026... or name/email">
+            <div class="col-md-5">
+                <label for="q" class="form-label small fw-semibold">Search Name, Email, Code, Title, Summary, or Education</label>
+                <input type="text" id="q" name="q" value="{{ request('q') }}" class="form-control form-control-sm" placeholder="CAND-2026..., name, title, or parsed keyword">
             </div>
-            <div class="col-md-3 d-flex gap-2">
+            <div class="col-md-3">
+                <label for="skill" class="form-label small fw-semibold">Filter by Parsed Skill</label>
+                <input type="text" id="skill" name="skill" value="{{ request('skill') }}" class="form-control form-control-sm" placeholder="e.g. Laravel, Kubernetes">
+            </div>
+            <div class="col-md-2">
+                <label for="parse_status" class="form-label small fw-semibold">AI Parse Status</label>
+                <select id="parse_status" name="parse_status" class="form-select form-select-sm">
+                    <option value="">All Statuses</option>
+                    @foreach(['COMPLETED', 'REVIEW_REQUIRED', 'FAILED', 'NONE'] as $ps)
+                        <option value="{{ $ps }}" @selected(request('parse_status') === $ps)>{{ $ps }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
                 <button type="submit" class="btn btn-sm btn-primary w-100">Search</button>
                 <a href="{{ route('candidates.index') }}" class="btn btn-sm btn-outline-secondary">Reset</a>
             </div>
@@ -105,8 +118,8 @@
                     <tr>
                         <th>Code</th>
                         <th>Name &amp; Email</th>
-                        <th>Title &amp; Experience</th>
-                        <th>Source</th>
+                        <th>Title, Experience &amp; Skills</th>
+                        <th>AI Resume Parse</th>
                         <th>Consent</th>
                         <th>Docs / Apps</th>
                         <th>Actions</th>
@@ -114,6 +127,14 @@
                 </thead>
                 <tbody>
                     @forelse($candidates as $cand)
+                        @php
+                            $parseBadge = match($cand->resume_parse_status ?? 'NONE') {
+                                'COMPLETED' => 'bg-success',
+                                'REVIEW_REQUIRED' => 'bg-warning text-dark',
+                                'FAILED' => 'bg-danger',
+                                default => 'bg-secondary',
+                            };
+                        @endphp
                         <tr>
                             <td><code>{{ $cand->candidate_code }}</code></td>
                             <td>
@@ -121,10 +142,19 @@
                                 <code class="small">{{ $cand->email }}</code>
                             </td>
                             <td class="small">
-                                <div>{{ $cand->current_title ?? '—' }}</div>
-                                <div class="text-muted">{{ $cand->years_experience }} yrs exp</div>
+                                <div class="fw-semibold">{{ $cand->current_title ?? '—' }} ({{ $cand->years_experience }} yrs exp)</div>
+                                @if(!empty($cand->skills))
+                                    <div class="mt-1">
+                                        @foreach(array_slice((array)$cand->skills, 0, 5) as $sk)
+                                            <span class="badge bg-light text-dark border me-1">{{ $sk }}</span>
+                                        @endforeach
+                                    </div>
+                                @endif
                             </td>
-                            <td><span class="badge bg-light text-dark border">{{ $cand->source_channel }}</span></td>
+                            <td>
+                                <span class="badge {{ $parseBadge }}">{{ $cand->resume_parse_status ?? 'NONE' }}</span>
+                                <div class="small text-muted mt-1">{{ $cand->source_channel }}</div>
+                            </td>
                             <td>
                                 @if($cand->consent_given)
                                     <span class="badge bg-success">CONSENTED ({{ $cand->consent_version }})</span>
@@ -139,7 +169,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-4">No candidates found in this tenant.</td>
+                            <td colspan="7" class="text-center text-muted py-4">No candidates found matching your search criteria in this tenant.</td>
                         </tr>
                     @endforelse
                 </tbody>

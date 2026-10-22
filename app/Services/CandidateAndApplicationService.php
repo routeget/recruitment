@@ -22,8 +22,14 @@ class CandidateAndApplicationService
     private const ALLOWED_MIMES = [
         'application/pdf',
         'application/msword',
+        'application/cdfv2',
+        'application/vnd.ms-office',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/zip',
         'text/plain',
+        'application/x-empty',
+        'inode/x-empty',
+        'application/octet-stream',
     ];
 
     private const STAGE_TRANSITIONS = [
@@ -254,8 +260,30 @@ class CandidateAndApplicationService
             ]);
         }
 
-        $rawBytes = file_get_contents($file->getRealPath());
-        $sha256 = hash('sha256', (string) $rawBytes);
+        $rawBytes = (string) file_get_contents($file->getRealPath());
+        if (
+            str_starts_with($rawBytes, '<?php')
+            || str_starts_with($rawBytes, "\x7fELF")
+            || str_starts_with($rawBytes, "MZ\x90\x00")
+            || str_starts_with($rawBytes, '#!/')
+        ) {
+            $this->audit->record(
+                module: 'documents',
+                action: 'unsafe_document_upload_rejected',
+                outcome: 'DENIED',
+                errorCode: 'VALIDATION_ERROR',
+                entityType: 'Candidate',
+                entityId: (string) $candidate->id,
+                metadata: ['extension' => $ext, 'mime' => $mime, 'reason' => 'executable_header_detected'],
+                tenantId: $candidate->tenant_id
+            );
+
+            throw ValidationException::withMessages([
+                'document' => ['VALIDATION_ERROR: Executable or script payloads disguised as documents are strictly prohibited.'],
+            ]);
+        }
+
+        $sha256 = hash('sha256', $rawBytes);
         $safeFilename = Str::uuid().'.'.$ext;
         $relativePath = "private/tenants/{$candidate->tenant_id}/candidates/{$candidate->id}/{$safeFilename}";
 

@@ -8,6 +8,7 @@ use App\Exceptions\HrHandoverGateNotSatisfiedException;
 use App\Models\ApiClient;
 use App\Models\Application;
 use App\Models\Candidate;
+use App\Models\CandidateDocument;
 use App\Models\Department;
 use App\Models\HrHandover;
 use App\Models\HrValidationCase;
@@ -15,6 +16,7 @@ use App\Models\JobPosting;
 use App\Models\LegalEntity;
 use App\Models\Location;
 use App\Models\Requisition;
+use App\Models\ResumeParseJob;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\ApiAndMcpPlatformService;
@@ -23,6 +25,7 @@ use App\Services\CandidateAndApplicationService;
 use App\Services\OfferAndHrHandoverService;
 use App\Services\PlatformConfigService;
 use App\Services\RequisitionService;
+use App\Services\ResumeParsingService;
 use App\Services\TenantContextService;
 use App\Support\ApiClientPrincipal;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -38,6 +41,7 @@ class ApiV1AndMcpController extends Controller
         private readonly RequisitionService $requisitionService,
         private readonly CandidateAndApplicationService $candidateAppService,
         private readonly OfferAndHrHandoverService $handoverService,
+        private readonly ResumeParsingService $resumeParsingService,
         private readonly TenantContextService $tenantContext,
         private readonly AuditService $audit,
     ) {}
@@ -138,11 +142,30 @@ class ApiV1AndMcpController extends Controller
     {
         [$tenantId] = $this->resolveApiAuthContext($request, 'candidates.view');
 
-        $items = Candidate::withoutGlobalScopes()
-            ->where('tenant_id', $tenantId)
-            ->latest('id')
-            ->limit(25)
-            ->get();
+        $query = Candidate::withoutGlobalScopes()
+            ->where('tenant_id', $tenantId);
+
+        if ($request->filled('q')) {
+            $q = trim($request->string('q')->toString());
+            if ($q !== '') {
+                $query->where(function ($sub) use ($q) {
+                    $sub->where('first_name', 'like', "%{$q}%")
+                        ->orWhere('last_name', 'like', "%{$q}%")
+                        ->orWhere('email', 'like', "%{$q}%")
+                        ->orWhere('current_title', 'like', "%{$q}%")
+                        ->orWhere('skills', 'like', "%{$q}%");
+                });
+            }
+        }
+
+        if ($request->filled('skill')) {
+            $skill = trim($request->string('skill')->toString());
+            if ($skill !== '') {
+                $query->where('skills', 'like', "%{$skill}%");
+            }
+        }
+
+        $items = $query->latest('id')->limit(25)->get();
 
         return $this->envelope(['items' => $items]);
     }
@@ -198,6 +221,124 @@ class ApiV1AndMcpController extends Controller
         } catch (RuntimeException $e) {
             return $this->errorEnvelope('IDEMPOTENCY_CONFLICT', $e->getMessage(), 409);
         }
+    }
+
+    public function listCandidateResumeParsesApi(Request $request, int $candidateId): JsonResponse
+    {
+        [$tenantId] = $this->resolveApiAuthContext($request, 'candidates.view');
+
+        $candidate = Candidate::withoutGlobalScopes()->findOrFail($candidateId);
+        if ((int) $candidate->tenant_id !== $tenantId) {
+            return $this->errorEnvelope('TENANT_SCOPE_VIOLATION', 'Cross-tenant access to candidate resume parses is prohibited.', 403);
+        }
+
+        $items = ResumeParseJob::withoutGlobalScopes()
+            ->where('tenant_id', $tenantId)
+            ->where('candidate_id', $candidate->id)
+            ->latest('id')
+            ->limit(25)
+            ->get();
+
+        return $this->envelope(['items' => $items]);
+    }
+
+    public function parseCandidateDocumentApi(Request $request, int $candidateId, int $documentId): JsonResponse
+    {
+        [$tenantId, $actor] = $this->resolveApiAuthContext($request, 'candidates.manage');
+
+        $candidate = Candidate::withoutGlobalScopes()->findOrFail($candidateId);
+        $doc = CandidateDocument::withoutGlobalScopes()->findOrFail($documentId);
+
+        if ((int) $candidate->tenant_id !== $tenantId || (int) $doc->tenant_id !== $tenantId || (int) $doc->candidate_id !== (int) $candidate->id) {
+            return $this->errorEnvelope('TENANT_SCOPE_VIOLATION', 'Cross-tenant or mismatched candidate document parsing is prohibited.', 403);
+        }
+
+        $forceReprocess = (bool) $request->boolean('force_reprocess', false);
+        $parseJob = $this->resumeParsingService->parseDocument(
+            candidate: $candidate,
+            document: $doc,
+            applicationId: $doc->application_id,
+            actor: $actor instanceof User ? $actor : null,
+            forceReprocess: $forceReprocess,
+        );
+
+        return $this->envelope([
+            'parse_job_id' => $parseJob->id,
+            'uuid' => $parseJob->uuid,
+            'status' => $parseJob->status,
+            'schema_version' => $parseJob->schema_version,
+            'provider_key' => $parseJob->provider_key,
+            'model_name' => $parseJob->model_name,
+            'ocr_used' => $parseJob->ocr_used,
+            'is_scanned_document' => $parseJob->is_scanned_document,
+            'prompt_injection_detected' => $parseJob->prompt_injection_detected,
+            'parsed_data' => $parseJob->getEffectiveResumeData(),
+            'missing_fields' => $parseJob->missing_fields,
+            'error_code' => $parseJob->error_code,
+            'error_message' => $parseJob->error_message,
+        ]);
+    }
+
+    public function reviewCandidateResumeParseApi(Request $request, int $candidateId, int $parseJobId): JsonResponse
+    {
+        [$tenantId, $actor] = $this->resolveApiAuthContext($request, 'candidates.manage');
+
+        $candidate = Candidate::withoutGlobalScopes()->findOrFail($candidateId);
+        $parseJob = ResumeParseJob::withoutGlobalScopes()->findOrFail($parseJobId);
+
+        if ((int) $candidate->tenant_id !== $tenantId || (int) $parseJob->tenant_id !== $tenantId || (int) $parseJob->candidate_id !== (int) $candidate->id) {
+            return $this->errorEnvelope('TENANT_SCOPE_VIOLATION', 'Cross-tenant access to candidate resume parse review is prohibited.', 403);
+        }
+
+        $validated = $request->validate([
+            'full_name' => ['required', 'string', 'max:190'],
+            'email' => ['required', 'email', 'max:190'],
+            'phone' => ['nullable', 'string', 'max:40'],
+            'location' => ['nullable', 'string', 'max:120'],
+            'country_code' => ['nullable', 'string', 'size:2'],
+            'current_title' => ['nullable', 'string', 'max:150'],
+            'total_years_experience' => ['nullable', 'integer', 'min:0', 'max:60'],
+            'professional_summary' => ['nullable', 'string', 'max:3000'],
+            'skills' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $updatedJob = $this->resumeParsingService->applyCorrections(
+            parseJob: $parseJob,
+            candidate: $candidate,
+            correctedPayload: $validated,
+            reviewer: $actor instanceof User ? $actor : null,
+            isCandidateReview: false,
+        );
+
+        return $this->envelope([
+            'parse_job_id' => $updatedJob->id,
+            'status' => $updatedJob->status,
+            'effective_data' => $updatedJob->getEffectiveResumeData(),
+        ]);
+    }
+
+    public function evaluateApplicationMatchApi(Request $request, int $applicationId): JsonResponse
+    {
+        [$tenantId, $actor] = $this->resolveApiAuthContext($request, 'candidates.manage');
+
+        $application = Application::withoutGlobalScopes()->with(['candidate', 'jobPosting'])->findOrFail($applicationId);
+        if ((int) $application->tenant_id !== $tenantId) {
+            return $this->errorEnvelope('TENANT_SCOPE_VIOLATION', 'Cross-tenant access to application AI matching is prohibited.', 403);
+        }
+
+        $updated = $this->resumeParsingService->evaluateApplicationMatch(
+            application: $application,
+            candidate: $application->candidate,
+            actor: $actor instanceof User ? $actor : null,
+        );
+
+        return $this->envelope([
+            'application_id' => $updated->id,
+            'application_number' => $updated->application_number,
+            'ai_match_score' => $updated->ai_match_score,
+            'ai_match_data' => $updated->ai_match_data,
+            'ai_match_reviewed' => $updated->ai_match_reviewed,
+        ]);
     }
 
     public function listApplications(Request $request): JsonResponse

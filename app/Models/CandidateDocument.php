@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class CandidateDocument extends Model
 {
@@ -43,5 +45,20 @@ class CandidateDocument extends Model
     public function uploader(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by_user_id');
+    }
+
+    public function parseJobs(): HasMany
+    {
+        return $this->hasMany(ResumeParseJob::class, 'candidate_document_id')->orderByDesc('id');
+    }
+
+    public function resumeParseJobs(): HasMany
+    {
+        return $this->parseJobs();
+    }
+
+    public function latestParseJob(): HasOne
+    {
+        return $this->hasOne(ResumeParseJob::class, 'candidate_document_id')->latestOfMany('id');
     }
 }

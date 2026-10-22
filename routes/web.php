@@ -125,6 +125,12 @@ Route::middleware('auth')->group(function () {
         Route::post('/candidates/{candidate}/documents', [CandidateAndApplicationController::class, 'uploadDocument'])
             ->middleware('permission:candidates.manage')
             ->name('candidates.documents.upload');
+        Route::post('/candidates/{candidate}/documents/{document}/parse', [CandidateAndApplicationController::class, 'parseCandidateDocument'])
+            ->middleware('permission:candidates.manage')
+            ->name('candidates.documents.parse');
+        Route::post('/candidates/{candidate}/resume-parses/{parseJob}/review', [CandidateAndApplicationController::class, 'reviewCandidateResumeParse'])
+            ->middleware('permission:candidates.manage')
+            ->name('candidates.resume-parses.review');
         Route::post('/candidates/{candidate}/consent', [CandidateAndApplicationController::class, 'updateConsent'])
             ->middleware('permission:candidates.manage')
             ->name('candidates.consent.update');
@@ -144,6 +150,12 @@ Route::middleware('auth')->group(function () {
         Route::post('/applications/{application}/transition', [CandidateAndApplicationController::class, 'transitionApplicationStage'])
             ->middleware('permission:applications.manage')
             ->name('applications.transition');
+        Route::post('/applications/{application}/ai-match', [CandidateAndApplicationController::class, 'evaluateApplicationAiMatch'])
+            ->middleware('permission:screening.manage,ai.use')
+            ->name('applications.ai-match');
+        Route::post('/applications/{application}/ai-match/review', [CandidateAndApplicationController::class, 'reviewApplicationAiMatch'])
+            ->middleware('permission:screening.manage,ai.use')
+            ->name('applications.ai-match.review');
 
         // Increment 4: Screening, Assessments, Interviews, Scorecards, Decisions & Analytics
         Route::get('/evaluations', [EvaluationAndDecisionController::class, 'index'])
@@ -218,6 +230,15 @@ Route::middleware('auth')->group(function () {
         Route::post('/ai/providers/{provider}', [AiGatewayController::class, 'updateProviderConfig'])
             ->middleware('permission:ai.admin')
             ->name('ai.providers.update');
+        Route::post('/ai/providers/{provider}/validate', [AiGatewayController::class, 'validateProviderConnection'])
+            ->middleware('permission:ai.admin')
+            ->name('ai.providers.validate');
+        Route::post('/ai/routes/{route}', [AiGatewayController::class, 'updateTaskRoute'])
+            ->middleware('permission:ai.admin')
+            ->name('ai.routes.update');
+        Route::post('/ai/prompts', [AiGatewayController::class, 'storePromptVersion'])
+            ->middleware('permission:ai.admin')
+            ->name('ai.prompts.store');
 
         Route::get('/integrations/api', [IntegrationsAndDynamicsController::class, 'apiAndMcpIndex'])
             ->middleware('permission:api.admin')
@@ -300,9 +321,21 @@ Route::middleware('auth')->group(function () {
 Route::get('/{tenantSlug}/jobs/{jobSlug}', [CareerPortalController::class, 'showJob'])
     ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
     ->name('careers.show');
+Route::post('/{tenantSlug}/jobs/{jobSlug}/extract-resume', [CareerPortalController::class, 'extractResumeForApplication'])
+    ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+    ->name('careers.extract-resume');
 Route::post('/{tenantSlug}/jobs/{jobSlug}/apply', [CareerPortalController::class, 'submitPublicApplication'])
     ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
     ->name('careers.apply');
+Route::get('/{tenantSlug}/applications/{applicationUuid}/resume-review', [CareerPortalController::class, 'showCandidateResumeReview'])
+    ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+    ->name('careers.application.resume-review');
+Route::post('/{tenantSlug}/applications/{applicationUuid}/resume-review', [CareerPortalController::class, 'submitCandidateResumeReview'])
+    ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+    ->name('careers.application.resume-review.submit');
+Route::post('/{tenantSlug}/applications/{applicationUuid}/resume-reprocess', [CareerPortalController::class, 'reprocessCandidateResume'])
+    ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+    ->name('careers.application.resume-reprocess');
 Route::get('/{tenantSlug}', [CareerPortalController::class, 'tenantIndex'])
     ->where('tenantSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
     ->name('tenant.careers.index');

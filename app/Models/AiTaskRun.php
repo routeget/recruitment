@@ -20,6 +20,10 @@ class AiTaskRun extends Model
         'task_type',
         'provider_key',
         'model_name',
+        'execution_mode',
+        'fallback_used',
+        'primary_provider_key',
+        'retry_count',
         'prompt_version',
         'input_hash',
         'redacted_input_summary',
@@ -33,12 +37,17 @@ class AiTaskRun extends Model
         'cost_minor',
         'status',
         'error_code',
+        'error_message',
         'correlation_id',
+        'entity_type',
+        'entity_id',
     ];
 
     protected function casts(): array
     {
         return [
+            'fallback_used' => 'boolean',
+            'retry_count' => 'integer',
             'prompt_version' => 'integer',
             'structured_output' => 'array',
             'schema_valid' => 'boolean',
@@ -47,6 +56,7 @@ class AiTaskRun extends Model
             'latency_ms' => 'integer',
             'tokens_used' => 'integer',
             'cost_minor' => 'integer',
+            'entity_id' => 'integer',
         ];
     }
 

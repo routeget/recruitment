@@ -6,6 +6,7 @@ use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Application extends Model
 {
@@ -46,6 +47,11 @@ class Application extends Model
         'current_stage',
         'candidate_visible_status',
         'screening_score',
+        'ai_match_score',
+        'ai_match_data',
+        'ai_match_reviewed',
+        'ai_match_reviewed_by_user_id',
+        'ai_match_reviewed_at',
         'eligibility_verified',
         'screening_notes',
         'cover_note',
@@ -61,6 +67,10 @@ class Application extends Model
     {
         return [
             'screening_score' => 'decimal:2',
+            'ai_match_score' => 'decimal:2',
+            'ai_match_data' => 'array',
+            'ai_match_reviewed' => 'boolean',
+            'ai_match_reviewed_at' => 'datetime',
             'eligibility_verified' => 'boolean',
             'answers' => 'array',
             'submitted_at' => 'datetime',
@@ -88,6 +98,21 @@ class Application extends Model
     public function assignedRecruiter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_recruiter_user_id');
+    }
+
+    public function aiMatchReviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'ai_match_reviewed_by_user_id');
+    }
+
+    public function resumeParseJobs(): HasMany
+    {
+        return $this->hasMany(ResumeParseJob::class)->orderByDesc('id');
+    }
+
+    public function latestResumeParseJob(): HasOne
+    {
+        return $this->hasOne(ResumeParseJob::class)->latestOfMany('id');
     }
 
     public function stageEvents(): HasMany

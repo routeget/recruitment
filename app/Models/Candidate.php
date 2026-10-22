@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Candidate extends Model
 {
@@ -24,7 +25,17 @@ class Candidate extends Model
         'current_title',
         'years_experience',
         'skills',
+        'professional_summary',
         'parsed_resume_data',
+        'work_experience',
+        'education',
+        'certifications',
+        'projects',
+        'languages',
+        'professional_links',
+        'resume_parse_status',
+        'resume_parsed_at',
+        'resume_schema_version',
         'source_channel',
         'talent_pool_tag',
         'consent_given',
@@ -42,6 +53,13 @@ class Candidate extends Model
             'years_experience' => 'integer',
             'skills' => 'array',
             'parsed_resume_data' => 'array',
+            'work_experience' => 'array',
+            'education' => 'array',
+            'certifications' => 'array',
+            'projects' => 'array',
+            'languages' => 'array',
+            'professional_links' => 'array',
+            'resume_parsed_at' => 'datetime',
             'consent_given' => 'boolean',
             'consent_given_at' => 'datetime',
             'privacy_notice_acknowledged' => 'boolean',
@@ -58,6 +76,16 @@ class Candidate extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(CandidateDocument::class)->orderByDesc('id');
+    }
+
+    public function resumeParseJobs(): HasMany
+    {
+        return $this->hasMany(ResumeParseJob::class)->orderByDesc('id');
+    }
+
+    public function latestResumeParseJob(): HasOne
+    {
+        return $this->hasOne(ResumeParseJob::class)->latestOfMany('id');
     }
 
     public function applications(): HasMany
