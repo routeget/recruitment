@@ -140,9 +140,10 @@
                             <div class="nav-section-label text-warning">Platform Administration</div>
                             <ul class="nav flex-column mb-2">
                                 <li class="nav-item">
-                                    <a class="nav-link {{ request()->routeIs('platform-admin.*') ? 'active' : '' }}" href="{{ route('platform-admin.index') }}">
+                                    <a class="nav-link {{ request()->routeIs('platform-admin.index', 'platform-admin.section') ? 'active' : '' }}" href="{{ route('platform-admin.index') }}">
                                         Platform Configuration Centre
                                     </a>
+                                </li>
                                 <li class="nav-item">
                                     <a class="nav-link {{ request()->routeIs('platform-admin.integrations.api') ? 'active' : '' }}" href="{{ route('platform-admin.integrations.api') }}">
                                         API Integrations
@@ -152,7 +153,6 @@
                                     <a class="nav-link {{ request()->routeIs('platform-admin.system.diagnostics') ? 'active' : '' }}" href="{{ route('platform-admin.system.diagnostics') }}">
                                         System Diagnostics
                                     </a>
-                                </li>
                                 </li>
                             </ul>
                         @endif
