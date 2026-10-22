@@ -4,6 +4,7 @@ use App\Exceptions\HrHandoverGateNotSatisfiedException;
 use App\Http\Middleware\EnforceTenantAndSecurityContext;
 use App\Http\Middleware\RequirePermission;
 use App\Http\Middleware\RequirePlatformSuperAdmin;
+use App\Http\Middleware\RequirePlatformAdmin;
 use App\Http\Middleware\RequireTenantUser;
 use App\Http\Middleware\RequireTenantUser;
 use Illuminate\Foundation\Application;
@@ -33,7 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant.context' => EnforceTenantAndSecurityContext::class,
             'permission' => RequirePermission::class,
             'platform.superadmin' => RequirePlatformSuperAdmin::class,
-            'platform.admin' => RequirePlatformSuperAdmin::class,
+            'platform.admin' => RequirePlatformAdmin::class,
             'tenant.user' => RequireTenantUser::class,
             'platform.admin' => RequirePlatformSuperAdmin::class,
             'tenant.user' => RequireTenantUser::class,
