@@ -246,9 +246,6 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/tenants-iam/sso/identities/{identity}/status', [EntraSsoController::class, 'updateIdentityStatus'])
         ->middleware('permission:iam.manage')
         ->name('admin.iam.sso.identities.status');
-    Route::post('/admin/platform/support-context', [AuditGovernanceController::class, 'grantPlatformSupportContext'])
-        ->name('admin.iam.support-context');
-
     Route::get('/admin/audit-events', [AuditGovernanceController::class, 'auditIndex'])
         ->middleware('permission:audit.view')
         ->name('admin.audit.index');
@@ -263,6 +260,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/system/diagnostics', [HealthController::class, 'diagnosticsPage'])->name('system.diagnostics');
         Route::get('/section/{section}', [PlatformAdminController::class, 'index'])->name('section');
         Route::post('/settings/{section}', [PlatformAdminController::class, 'updateSection'])->name('settings.update');
+        Route::post('/support-context', [AuditGovernanceController::class, 'grantPlatformSupportContext'])->name('support-context');
         Route::post('/tenants', [PlatformAdminController::class, 'storeTenant'])->name('tenants.store');
         Route::post('/tenants/{tenant}/lifecycle', [PlatformAdminController::class, 'updateTenantLifecycle'])->name('tenants.lifecycle');
         Route::post('/admins/promote', [PlatformAdminController::class, 'promoteAdmin'])->name('admins.promote');
