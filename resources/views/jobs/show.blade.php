@@ -42,6 +42,16 @@
                     <input type="hidden" name="target_status" value="UNPUBLISHED">
                     <button type="submit" class="btn btn-outline-warning">Unpublish</button>
                 </form>
+                <form method="POST" action="{{ route('jobs.status', $job->id) }}">
+                    @csrf
+                    <input type="hidden" name="target_status" value="CLOSED">
+                    <button type="submit" class="btn btn-outline-secondary">Close Posting</button>
+                </form>
+                <form method="POST" action="{{ route('jobs.status', $job->id) }}">
+                    @csrf
+                    <input type="hidden" name="target_status" value="EXPIRED">
+                    <button type="submit" class="btn btn-outline-danger">Mark Expired</button>
+                </form>
             @endif
         @endif
     </div>
@@ -84,6 +94,25 @@
                 <div class="alert alert-secondary small mb-0">
                     <strong>LinkedIn Jobs / Indeed Feed:</strong> Marked <code>UNAVAILABLE_UNCONFIGURED</code> until real vendor connector credentials are provisioned.
                 </div>
+            </div>
+        </div>
+
+        <div class="card stat-card mb-4">
+            <div class="card-header bg-white fw-bold">Immutable Version History ({{ $job->versions->count() }})</div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush small">
+                    @forelse($job->versions as $ver)
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>v{{ $ver->version_number }}</strong> — {{ $ver->change_summary }}
+                                <div class="text-muted">{{ $ver->creator?->name ?? 'System' }}</div>
+                            </div>
+                            <code>{{ $ver->created_at?->format('Y-m-d') }}</code>
+                        </li>
+                    @empty
+                        <li class="list-group-item text-muted text-center">No version snapshots recorded.</li>
+                    @endforelse
+                </ul>
             </div>
         </div>
     </div>

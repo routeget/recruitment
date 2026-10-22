@@ -278,13 +278,16 @@ class EntraSsoService
         User $actor,
         ?string $expectedEntraObjectId = null,
     ): array {
+        $normalizedEmail = strtolower(trim($email));
+        $this->assertEmailDomainAllowed($connection, $normalizedEmail);
+
         $rawToken = 'sso_inv_'.Str::random(40);
 
         $invitation = SsoInvitation::withoutGlobalScopes()->create([
             'uuid' => (string) Str::uuid(),
             'tenant_id' => $connection->tenant_id,
             'connection_id' => $connection->id,
-            'email' => strtolower(trim($email)),
+            'email' => $normalizedEmail,
             'expected_entra_object_id' => $expectedEntraObjectId ? trim($expectedEntraObjectId) : null,
             'role_id' => $role->id,
             'token_hash' => hash('sha256', $rawToken),
@@ -309,6 +312,34 @@ class EntraSsoService
         );
 
         return ['invitation' => $invitation, 'raw_token' => $rawToken];
+    }
+
+    private function assertEmailDomainAllowed(ExternalIdentityConnection $connection, string $email): void
+    {
+        $allowedDomains = is_array($connection->allowed_domains)
+            ? array_values(array_filter(array_map(static fn ($d): string => strtolower(trim((string) $d)), $connection->allowed_domains)))
+            : [];
+
+        if (empty($allowedDomains)) {
+            return;
+        }
+
+        $atPos = strrpos($email, '@');
+        $domain = $atPos !== false ? strtolower(trim(substr($email, $atPos + 1))) : '';
+
+        if ($domain === '' || ! in_array($domain, $allowedDomains, true)) {
+            $this->recordFailure('sso.login_denied', 'SSO_EMAIL_DOMAIN_NOT_ALLOWED', [
+                'email_domain' => $domain,
+                'allowed_domains' => $allowedDomains,
+                'connection_id' => $connection->id,
+            ], (int) $connection->tenant_id);
+
+            throw new EntraSsoException(
+                'SSO_EMAIL_DOMAIN_NOT_ALLOWED',
+                "Email domain '{$domain}' is not permitted by this Microsoft Entra connection's allowed domains policy.",
+                403,
+            );
+        }
     }
 
     /**
@@ -653,6 +684,10 @@ class EntraSsoService
                 'Target recruitment tenant is not active.',
                 403,
             );
+        }
+
+        if ($emailClaim !== '') {
+            $this->assertEmailDomainAllowed($connection, $emailClaim);
         }
 
         $safeClaimsSnapshot = [

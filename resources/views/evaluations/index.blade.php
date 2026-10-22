@@ -265,4 +265,79 @@
         </div>
     </div>
 </div>
+
+<div class="row g-4 mt-1">
+    <div class="col-lg-6">
+        <div class="card stat-card">
+            <div class="card-header bg-white fw-bold">Screening Evaluations ({{ $screeningEvaluations->count() }})</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Application</th>
+                                <th>Evaluator</th>
+                                <th>Score</th>
+                                <th>Recommendation</th>
+                                <th>Evidence Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($screeningEvaluations as $scr)
+                                <tr>
+                                    <td class="small fw-semibold">{{ $scr->application?->application_number }} — {{ $scr->application?->candidate?->full_name }}</td>
+                                    <td class="small">{{ $scr->evaluator?->name }}</td>
+                                    <td><span class="badge bg-primary">{{ $scr->overall_score }}</span></td>
+                                    <td><span class="badge bg-info text-dark">{{ $scr->recommendation }}</span></td>
+                                    <td class="small">{{ $scr->notes }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-3">No screening evaluations recorded yet.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card stat-card">
+            <div class="card-header bg-white fw-bold">Assessment Results ({{ $assessments->count() }})</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Application</th>
+                                <th>Title</th>
+                                <th>Type</th>
+                                <th>Score / Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($assessments as $ass)
+                                <tr>
+                                    <td class="small fw-semibold">{{ $ass->application?->application_number }} — {{ $ass->application?->candidate?->full_name }}</td>
+                                    <td class="small">{{ $ass->title }}</td>
+                                    <td><code>{{ $ass->assessment_type }}</code></td>
+                                    <td>
+                                        <span class="badge bg-success">{{ $ass->score ?? 'N/A' }}</span>
+                                        <span class="badge bg-secondary">{{ $ass->status }}</span>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted py-3">No assessment results recorded yet.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 @endsection

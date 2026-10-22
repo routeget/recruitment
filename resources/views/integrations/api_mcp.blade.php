@@ -42,7 +42,11 @@
                                     <td class="fw-semibold small">{{ $cli->name }}</td>
                                     <td><code class="small">{{ $cli->client_id }}</code></td>
                                     <td class="small">{{ implode(', ', $cli->scopes ?? []) }}</td>
-                                    <td><span class="badge bg-success">Active</span></td>
+                                    <td>
+                                        <span class="badge {{ $cli->is_active ? 'bg-success' : 'bg-danger' }}">
+                                            {{ $cli->is_active ? 'Active' : 'Revoked' }}
+                                        </span>
+                                    </td>
                                 </tr>
                             @empty
                                 <tr>

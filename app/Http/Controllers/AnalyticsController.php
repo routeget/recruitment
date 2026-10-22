@@ -31,10 +31,17 @@ class AnalyticsController extends Controller
             ->pluck('total', 'status')
             ->all();
 
+        $blockedHandovers = Schema::hasTable('hr_handovers')
+            ? DB::table('hr_handovers')->where('tenant_id', $tenantId)->whereIn('status', ['BLOCKED', 'blocked_pending_validation', 'failed_retryable'])->count()
+            : 0;
+        $blockedCases = Schema::hasTable('hr_validation_cases')
+            ? DB::table('hr_validation_cases')->where('tenant_id', $tenantId)->whereIn('status', ['not_started', 'in_validation', 'pending_fixes'])->count()
+            : 0;
+
         $offersSummary = [
             'total_offers' => Schema::hasTable('offers') ? DB::table('offers')->where('tenant_id', $tenantId)->count() : 0,
             'accepted_offers' => Schema::hasTable('offers') ? DB::table('offers')->where('tenant_id', $tenantId)->whereIn('status', ['ACCEPTED', 'accepted'])->count() : 0,
-            'handover_blocked' => Schema::hasTable('hr_handovers') ? DB::table('hr_handovers')->where('tenant_id', $tenantId)->whereIn('status', ['BLOCKED', 'blocked_pending_validation', 'failed_retryable'])->count() : 0,
+            'handover_blocked' => $blockedHandovers + $blockedCases,
             'handover_ready_or_queued' => Schema::hasTable('hr_handovers') ? DB::table('hr_handovers')->where('tenant_id', $tenantId)->whereIn('status', ['READY', 'QUEUED', 'SUCCEEDED', 'ready_for_dispatch', 'queued', 'succeeded', 'reconciled'])->count() : 0,
         ];
 

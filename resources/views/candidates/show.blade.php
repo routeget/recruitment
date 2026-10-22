@@ -15,10 +15,40 @@
     <p class="text-muted small mb-0">
         Candidate Code: <code>{{ $candidate->candidate_code }}</code> |
         Email: <code>{{ $candidate->email }}</code> |
-        Consent: <span class="badge bg-success">{{ $candidate->consent_version }}</span> |
+        Consent: <span class="badge {{ $candidate->consent_given ? 'bg-success' : 'bg-danger' }}">{{ $candidate->consent_given ? $candidate->consent_version : 'WITHDRAWN' }}</span> |
+        DSAR: <span class="badge bg-info text-dark">{{ $candidate->dsar_status ?? 'NONE' }}</span> |
         Retention Until: <code>{{ $candidate->retention_expires_at?->format('Y-m-d') ?? 'N/A' }}</code>
     </p>
 </div>
+
+@if(in_array('candidates.manage', $activeUserPermissions ?? []))
+<div class="card stat-card mb-4">
+    <div class="card-header bg-white fw-bold">Privacy Consent &amp; DSAR Governance</div>
+    <div class="card-body py-2">
+        <form method="POST" action="{{ route('candidates.consent.update', $candidate->id) }}" class="row g-2 align-items-center">
+            @csrf
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold mb-1">Consent Status</label>
+                <select name="consent_given" class="form-select form-select-sm">
+                    <option value="1" @selected($candidate->consent_given)>CONSENT_ACTIVE ({{ $candidate->consent_version }})</option>
+                    <option value="0" @selected(!$candidate->consent_given)>CONSENT_WITHDRAWN</option>
+                </select>
+            </div>
+            <div class="col-md-5">
+                <label class="form-label small fw-semibold mb-1">Data Subject Access Request (DSAR) Status</label>
+                <select name="dsar_status" class="form-select form-select-sm">
+                    @foreach(['NONE', 'EXPORT_REQUESTED', 'DELETION_REQUESTED', 'ANONYMIZED'] as $dsar)
+                        <option value="{{ $dsar }}" @selected(($candidate->dsar_status ?? 'NONE') === $dsar)>{{ $dsar }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end pt-3">
+                <button type="submit" class="btn btn-sm btn-outline-primary w-100">Update Privacy / DSAR</button>
+            </div>
+        </form>
+    </div>
+</div>
+@endif
 
 <div class="row g-4">
     <div class="col-lg-6">

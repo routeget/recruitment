@@ -7,6 +7,7 @@ namespace App\Jobs;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookSubscription;
 use App\Services\AuditService;
+use App\Services\PlatformConfigService;
 use App\Support\WebhookSsrfGuard;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -34,6 +35,29 @@ class DeliverSignedWebhookJob implements ShouldQueue
         /** @var WebhookDelivery|null $delivery */
         $delivery = WebhookDelivery::withoutGlobalScopes()->find($this->webhookDeliveryId);
         if ($delivery === null || $delivery->status === 'DELIVERED') {
+            return;
+        }
+
+        if (! app(PlatformConfigService::class)->getBool('webhooks.global_delivery_enabled')) {
+            $delivery->update([
+                'status' => 'PAUSED_BY_PLATFORM_POLICY',
+                'error_code' => 'WEBHOOK_GLOBAL_DELIVERY_DISABLED',
+                'error_message' => 'Outbound webhook dispatch is globally paused by platform governance policy.',
+            ]);
+
+            $audit->record(
+                module: 'api_platform',
+                action: 'webhook.delivery_paused_by_platform',
+                outcome: 'DENIED',
+                errorCode: 'WEBHOOK_GLOBAL_DELIVERY_DISABLED',
+                entityType: 'webhook_delivery',
+                entityId: (string) $delivery->id,
+                metadata: ['event_id' => $delivery->event_id],
+                tenantId: (int) $delivery->tenant_id,
+                actorType: 'SYSTEM_QUEUE',
+                actorIdentifier: 'DeliverSignedWebhookJob',
+            );
+
             return;
         }
 

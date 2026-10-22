@@ -27,12 +27,19 @@ class OfferAndHrHandoverController extends Controller
         private readonly TenantContextService $tenantContext,
     ) {}
 
-    public function offersIndex(): View
+    public function offersIndex(Request $request): View
     {
-        $offers = Offer::query()
+        $this->tenantContext->requireTenantId();
+
+        $offersQuery = Offer::query()
             ->with(['application.candidate', 'application.jobPosting', 'currentVersion.legalEntity', 'acceptedVersion', 'hrValidationCase'])
-            ->latest()
-            ->get();
+            ->latest();
+
+        if ($request->filled('application_id')) {
+            $offersQuery->where('application_id', (int) $request->input('application_id'));
+        }
+
+        $offers = $offersQuery->get();
 
         $templates = OfferTemplate::query()->latest()->get();
         $applications = Application::query()->with(['candidate', 'jobPosting'])->latest()->get();
@@ -47,6 +54,7 @@ class OfferAndHrHandoverController extends Controller
             'legalEntities' => $legalEntities,
             'departments' => $departments,
             'locations' => $locations,
+            'selectedApplicationId' => $request->filled('application_id') ? (int) $request->input('application_id') : null,
         ]);
     }
 
@@ -139,6 +147,8 @@ class OfferAndHrHandoverController extends Controller
 
     public function hrHandoverIndex(): View
     {
+        $this->tenantContext->requireTenantId();
+
         $cases = HrValidationCase::query()
             ->with([
                 'application.candidate',
@@ -210,7 +220,7 @@ class OfferAndHrHandoverController extends Controller
 
         $validated = $request->validate([
             'idempotency_key' => ['nullable', 'string', 'max:120'],
-            'simulated_outcome' => ['nullable', 'string', 'in:succeeded,ambiguous_timeout'],
+            'simulated_outcome' => ['nullable', 'string', 'in:succeeded,ambiguous_timeout,live'],
         ]);
 
         $handover = $this->service->dispatchHandover(

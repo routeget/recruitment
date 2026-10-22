@@ -15,6 +15,7 @@ use App\Models\JobPosting;
 use App\Models\LegalEntity;
 use App\Models\Location;
 use App\Models\Requisition;
+use App\Models\Tenant;
 use App\Models\User;
 use App\Services\ApiAndMcpPlatformService;
 use App\Services\AuditService;
@@ -260,6 +261,11 @@ class ApiV1AndMcpController extends Controller
 
         [$tenantId, $actor] = $this->resolveApiAuthContext($request, 'mcp.use');
 
+        $tenant = Tenant::withoutGlobalScopes()->find($tenantId);
+        if ($tenant !== null && ! $tenant->mcp_enabled) {
+            return $this->errorEnvelope('MCP_DISABLED_FOR_TENANT', 'Model Context Protocol endpoints are disabled for this tenant.', 403);
+        }
+
         $tools = [];
         foreach (ApiAndMcpPlatformService::ALLOWLISTED_MCP_TOOLS as $name => $meta) {
             if ($actor->hasPermission($meta['required_permission'], $tenantId) || $actor->hasRole('tenant_admin', $tenantId)) {
@@ -283,6 +289,11 @@ class ApiV1AndMcpController extends Controller
         }
 
         [$tenantId, $actor] = $this->resolveApiAuthContext($request, 'mcp.use');
+
+        $tenant = Tenant::withoutGlobalScopes()->find($tenantId);
+        if ($tenant !== null && ! $tenant->mcp_enabled) {
+            return $this->errorEnvelope('MCP_DISABLED_FOR_TENANT', 'Model Context Protocol endpoints are disabled for this tenant.', 403);
+        }
 
         $validated = $request->validate([
             'tool' => ['required', 'string', 'max:80'],
@@ -340,6 +351,25 @@ class ApiV1AndMcpController extends Controller
 
             $principal = new ApiClientPrincipal($client);
             $tenantId = $principal->getTenantId();
+
+            $tenant = Tenant::withoutGlobalScopes()->find($tenantId);
+            if ($tenant === null || $tenant->status !== 'ACTIVE') {
+                $this->audit->record(
+                    module: 'api_platform',
+                    action: 'api_client.tenant_suspended',
+                    outcome: 'DENIED',
+                    errorCode: 'TENANT_SUSPENDED',
+                    metadata: ['client_id' => $clientId, 'tenant_status' => $tenant?->status],
+                    tenantId: $tenantId,
+                    actorType: 'API_CLIENT',
+                    actorIdentifier: $clientId,
+                );
+
+                abort(response()->json([
+                    'error' => ['code' => 'TENANT_SUSPENDED', 'message' => 'Tenant is suspended or inactive; API access is blocked.'],
+                ], 403));
+            }
+
             $this->tenantContext->setActiveTenantId($tenantId);
 
             if (! $principal->hasScope($requiredScope)) {
@@ -374,6 +404,13 @@ class ApiV1AndMcpController extends Controller
         }
 
         $tenantId = (int) ($this->tenantContext->getActiveTenantId() ?? $user->current_tenant_id);
+        $tenant = Tenant::withoutGlobalScopes()->find($tenantId);
+        if ($tenant === null || $tenant->status !== 'ACTIVE') {
+            abort(response()->json([
+                'error' => ['code' => 'TENANT_SUSPENDED', 'message' => 'Tenant is suspended or inactive; API access is blocked.'],
+            ], 403));
+        }
+
         if (! $user->hasPermission($requiredScope, $tenantId) && ! $user->hasRole('tenant_admin', $tenantId)) {
             abort(response()->json([
                 'error' => ['code' => 'FORBIDDEN', 'message' => "Caller lacks required permission '{$requiredScope}'."],

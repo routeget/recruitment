@@ -88,7 +88,12 @@ class RequisitionService
                 ]);
             }
 
-            $wasApprovedOrOpen = in_array($locked->status, [Requisition::STATUS_APPROVED, Requisition::STATUS_OPEN, Requisition::STATUS_IN_APPROVAL], true);
+            $wasApprovedOrOpen = in_array($locked->status, [
+                Requisition::STATUS_APPROVED,
+                Requisition::STATUS_OPEN,
+                Requisition::STATUS_IN_APPROVAL,
+                Requisition::STATUS_ON_HOLD,
+            ], true);
 
             $locked->fill([
                 'title' => $data['title'] ?? $locked->title,

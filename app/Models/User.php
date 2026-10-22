@@ -192,8 +192,13 @@ class User extends Authenticatable
 
         $permissions = [];
         foreach ($memberships as $membership) {
+            $abac = is_array($membership->abac_scope) ? $membership->abac_scope : [];
+            $prohibitCandidatePii = ! empty($abac['candidate_pii_browsing_prohibited']);
             if ($membership->role) {
                 foreach ($membership->role->permissions as $perm) {
+                    if ($prohibitCandidatePii && in_array($perm->slug, ['candidates.view', 'candidates.manage', 'applications.manage'], true)) {
+                        continue;
+                    }
                     $permissions[] = $perm->slug;
                 }
             }
@@ -205,5 +210,15 @@ class User extends Authenticatable
     public function hasPermission(string $permissionSlug, ?int $tenantId = null): bool
     {
         return in_array($permissionSlug, $this->permissionSlugsForTenant($tenantId), true);
+    }
+
+    /**
+     * @param  array<int, string>  $permissionSlugs
+     */
+    public function hasAnyPermission(array $permissionSlugs, ?int $tenantId = null): bool
+    {
+        $granted = $this->permissionSlugsForTenant($tenantId);
+
+        return count(array_intersect($permissionSlugs, $granted)) > 0;
     }
 }

@@ -80,6 +80,11 @@
                 </tbody>
             </table>
         </div>
+        @if($applications->hasPages())
+            <div class="card-footer bg-white">
+                {{ $applications->links() }}
+            </div>
+        @endif
     </div>
 </div>
 @endsection

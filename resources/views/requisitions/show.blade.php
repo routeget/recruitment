@@ -58,6 +58,15 @@
                 </form>
             @endif
         @endif
+
+        @if(!in_array($requisition->status, ['CLOSED', 'CANCELLED']) && in_array('requisitions.create', $activeUserPermissions ?? []))
+            <form method="POST" action="{{ route('requisitions.transition', $requisition->id) }}">
+                @csrf
+                <input type="hidden" name="target_status" value="CANCELLED">
+                <input type="hidden" name="reason" value="Cancelled by authorized requisition owner">
+                <button type="submit" class="btn btn-outline-danger">Cancel Requisition</button>
+            </form>
+        @endif
     </div>
 </div>
 

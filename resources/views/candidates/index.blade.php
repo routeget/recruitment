@@ -145,6 +145,11 @@
                 </tbody>
             </table>
         </div>
+        @if($candidates->hasPages())
+            <div class="card-footer bg-white">
+                {{ $candidates->links() }}
+            </div>
+        @endif
     </div>
 </div>
 @endsection

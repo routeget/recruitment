@@ -7,6 +7,7 @@ use App\Models\ApplicationStageEvent;
 use App\Models\Candidate;
 use App\Models\CandidateDocument;
 use App\Models\JobPosting;
+use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -86,8 +87,35 @@ class CandidateAndApplicationService
             Application::STAGE_SHORTLISTED,
             Application::STAGE_INTERVIEW,
             Application::STAGE_DECISION_PENDING,
+            Application::STAGE_OFFER_IN_PROGRESS,
             Application::STAGE_REJECTED,
             Application::STAGE_WITHDRAWN,
+        ],
+        Application::STAGE_HIRED_PENDING_HR_HANDOVER => [
+            Application::STAGE_REJECTED,
+            Application::STAGE_WITHDRAWN,
+            Application::STAGE_ON_HOLD,
+        ],
+        'offer' => [
+            Application::STAGE_HIRED_PENDING_HR_HANDOVER,
+            Application::STAGE_REJECTED,
+            Application::STAGE_WITHDRAWN,
+            Application::STAGE_ON_HOLD,
+        ],
+        'offer_accepted' => [
+            Application::STAGE_REJECTED,
+            Application::STAGE_WITHDRAWN,
+            Application::STAGE_ON_HOLD,
+        ],
+        'hr_validation' => [
+            Application::STAGE_REJECTED,
+            Application::STAGE_WITHDRAWN,
+            Application::STAGE_ON_HOLD,
+        ],
+        'approved_for_handover' => [
+            Application::STAGE_REJECTED,
+            Application::STAGE_WITHDRAWN,
+            Application::STAGE_ON_HOLD,
         ],
     ];
 
@@ -150,6 +178,8 @@ class CandidateAndApplicationService
             }
 
             $code = 'CAND-'.date('Y').'-'.str_pad((string) (Candidate::withoutTenantScope()->where('tenant_id', $tenantId)->count() + 1001), 4, '0', STR_PAD_LEFT);
+            $tenant = Tenant::withoutGlobalScopes()->find($tenantId);
+            $retentionDays = $tenant ? max(1, (int) $tenant->retention_days) : 365;
 
             $candidate = Candidate::withoutTenantScope()->create([
                 'uuid' => (string) Str::uuid(),
@@ -170,7 +200,7 @@ class CandidateAndApplicationService
                 'consent_version' => 'PRIVACY-v2.0',
                 'consent_given_at' => now(),
                 'privacy_notice_acknowledged' => true,
-                'retention_expires_at' => now()->addDays(365),
+                'retention_expires_at' => now()->addDays($retentionDays),
             ]);
 
             $this->audit->record(
@@ -231,6 +261,9 @@ class CandidateAndApplicationService
 
         Storage::disk('local')->put($relativePath, (string) $rawBytes);
 
+        $tenant = Tenant::withoutGlobalScopes()->find($candidate->tenant_id);
+        $retentionDays = $tenant ? max(1, (int) $tenant->retention_days) : 365;
+
         $doc = CandidateDocument::withoutTenantScope()->create([
             'uuid' => (string) Str::uuid(),
             'tenant_id' => $candidate->tenant_id,
@@ -245,7 +278,7 @@ class CandidateAndApplicationService
             'sha256_checksum' => $sha256,
             'malware_scan_status' => 'CLEAN_VERIFIED',
             'uploaded_by_user_id' => $uploader?->id,
-            'retention_expires_at' => now()->addDays(365),
+            'retention_expires_at' => now()->addDays($retentionDays),
         ]);
 
         $this->audit->record(
@@ -413,6 +446,46 @@ class CandidateAndApplicationService
                     'from_stage' => $current,
                     'to_stage' => $target,
                 ]
+            );
+
+            return $locked;
+        });
+    }
+
+    /**
+     * Update candidate privacy consent and DSAR status with full audit logging.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function updateCandidateConsentAndDsar(Candidate $candidate, array $data, User $actor): Candidate
+    {
+        $this->context->assertModelBelongsToActiveTenant($candidate, 'Candidate');
+
+        return DB::transaction(function () use ($candidate, $data, $actor): Candidate {
+            $locked = Candidate::withoutTenantScope()->lockForUpdate()->findOrFail($candidate->id);
+
+            $consentGiven = isset($data['consent_given']) ? (bool) $data['consent_given'] : (bool) $locked->consent_given;
+            $dsarStatus = (string) ($data['dsar_status'] ?? $locked->dsar_status ?? 'NONE');
+
+            $locked->update([
+                'consent_given' => $consentGiven,
+                'consent_given_at' => $consentGiven ? ($locked->consent_given_at ?? now()) : $locked->consent_given_at,
+                'dsar_status' => $dsarStatus,
+            ]);
+
+            $this->audit->record(
+                module: 'candidates',
+                action: 'candidate_consent_dsar_updated',
+                outcome: 'SUCCESS',
+                entityType: 'Candidate',
+                entityId: (string) $locked->id,
+                metadata: [
+                    'candidate_code' => $locked->candidate_code,
+                    'consent_given' => $locked->consent_given,
+                    'dsar_status' => $locked->dsar_status,
+                ],
+                tenantId: (int) $locked->tenant_id,
+                actorUserId: (int) $actor->id,
             );
 
             return $locked;

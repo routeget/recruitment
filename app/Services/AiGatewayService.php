@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Models\AiPromptVersion;
 use App\Models\AiProviderConfig;
 use App\Models\AiTaskRun;
+use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -122,6 +123,23 @@ class AiGatewayService
             );
 
             throw new RuntimeException('AI invocation blocked: Platform-wide AI emergency kill switch is engaged (AI_GLOBAL_KILL_SWITCH_ENGAGED).', 409);
+        }
+
+        $tenant = Tenant::withoutGlobalScopes()->find($tenantId);
+        if ($tenant !== null && $tenant->ai_kill_switch) {
+            $this->auditService->record(
+                module: 'ai_gateway',
+                action: 'ai.tenant_kill_switch_blocked',
+                outcome: 'DENIED',
+                errorCode: 'AI_TENANT_KILL_SWITCH_ENGAGED',
+                entityType: 'Tenant',
+                entityId: (string) $tenantId,
+                metadata: ['provider_key' => $providerKey, 'task_type' => $taskType],
+                tenantId: $tenantId,
+                actorUserId: (int) $actor->id,
+            );
+
+            throw new RuntimeException('AI invocation blocked: Tenant-level AI emergency kill switch is engaged (AI_TENANT_KILL_SWITCH_ENGAGED).', 409);
         }
 
         if (in_array($taskType, self::PROHIBITED_TASKS, true) || ! array_key_exists($taskType, self::ALLOWED_TASKS)) {

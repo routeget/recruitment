@@ -227,4 +227,24 @@ class CandidateAndApplicationController extends Controller
         return redirect()->route('applications.show', $updated->id)
             ->with('status', "Transitioned {$updated->application_number} to {$updated->current_stage}.");
     }
+
+    public function updateConsent(
+        Request $request,
+        int $candidateId,
+        CandidateAndApplicationService $service,
+        TenantContextService $context
+    ): RedirectResponse {
+        $candidate = Candidate::withoutTenantScope()->findOrFail($candidateId);
+        $context->assertModelBelongsToActiveTenant($candidate, 'Candidate');
+
+        $validated = $request->validate([
+            'consent_given' => ['required', 'boolean'],
+            'dsar_status' => ['required', 'string', 'in:NONE,EXPORT_REQUESTED,DELETION_REQUESTED,ANONYMIZED'],
+        ]);
+
+        $updated = $service->updateCandidateConsentAndDsar($candidate, $validated, Auth::user());
+
+        return redirect()->route('candidates.show', $updated->id)
+            ->with('status', "Updated privacy consent & DSAR status for {$updated->candidate_code}.");
+    }
 }

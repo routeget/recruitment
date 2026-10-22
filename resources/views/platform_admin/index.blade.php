@@ -228,15 +228,19 @@
                     <input type="text" id="new-tenant-slug" name="slug" class="form-control form-control-sm" placeholder="contoso-corp" pattern="[a-z0-9]+(-[a-z0-9]+)*" autocomplete="off" required>
                     <div class="form-text small">Portal URL: career.tringers.com/{slug}/. Unique and immutable after creation.</div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label for="new-tenant-domain" class="form-label small fw-semibold">Primary Domain (Optional)</label>
                     <input type="text" id="new-tenant-domain" name="primary_domain" class="form-control form-control-sm" placeholder="contoso.career.tringers.com">
                 </div>
                 <div class="col-md-2">
+                    <label for="new-tenant-timezone" class="form-label small fw-semibold">Timezone</label>
+                    <input type="text" id="new-tenant-timezone" name="default_timezone" class="form-control form-control-sm" value="{{ $generalSettings['platform.default_timezone']['value'] ?? 'UTC' }}">
+                </div>
+                <div class="col-md-1">
                     <label for="new-tenant-currency" class="form-label small fw-semibold">Currency</label>
                     <select id="new-tenant-currency" name="default_currency" class="form-select form-select-sm">
                         @foreach(['USD', 'GBP', 'EUR', 'AED', 'INR'] as $curr)
-                            <option value="{{ $curr }}">{{ $curr }}</option>
+                            <option value="{{ $curr }}" @selected(($generalSettings['platform.default_currency']['value'] ?? 'USD') === $curr)>{{ $curr }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -301,7 +305,7 @@
                                         <label class="form-check-label small" for="mcp-{{ $t->id }}">MCP</label>
                                     </div>
                                     <div class="col-auto form-check form-check-inline mb-0">
-                                        <input type="checkbox" class="form-check-input" id="sso-req-{{ $t->id }}" name="sso_required" value="1" @checked($t->sso_required)>
+                                        <input type="checkbox" class="form-check-input" id="sso-req-{{ $t->id }}" name="sso_required" value="1" @checked($t->require_sso)>
                                         <label class="form-check-label small" for="sso-req-{{ $t->id }}">Require SSO</label>
                                     </div>
                                     <div class="col-auto" style="width: 95px;">
@@ -508,7 +512,7 @@
                             <td><strong>{{ $conn->tenant?->name ?? 'Tenant #'.$conn->tenant_id }}</strong></td>
                             <td>{{ $conn->display_name }}</td>
                             <td><code>{{ $conn->entra_tenant_id }}</code></td>
-                            <td><code>{{ $conn->provisioning_policy }}</code></td>
+                            <td><code>{{ $conn->jit_provisioning_enabled ? 'JIT_DEFAULT_'.strtoupper($conn->default_jit_role_slug ?? 'HIRING_MANAGER') : 'INVITE_ONLY' }}</code></td>
                             <td><code>{{ implode(', ', $conn->allowed_domains ?? []) ?: '*' }}</code></td>
                             <td>
                                 <span class="badge {{ $conn->is_enabled ? 'bg-success' : 'bg-secondary' }}">

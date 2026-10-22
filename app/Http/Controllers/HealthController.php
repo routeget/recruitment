@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AuditEvent;
 use App\Models\Tenant;
 use App\Services\EntraSsoService;
+use App\Services\PlatformConfigService;
 use App\Services\TenantContextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
@@ -52,10 +53,13 @@ class HealthController extends Controller
             && $checks['private_storage']['healthy']
             && $checks['queue']['healthy'];
 
+        $platformConfig = app(PlatformConfigService::class);
+        $liveWritesBlocked = $platformConfig->getBool('dynamics.global_live_writes_blocked');
+
         return response()->json([
             'status' => $overallHealthy ? 'OK' : 'DEGRADED',
             'probe_type' => $probeType,
-            'service' => 'Unified Recruitment AI Platform',
+            'service' => $platformConfig->getString('platform.display_name'),
             'release_stage' => 'Alpha',
             'correlation_id' => $context->getCorrelationId(),
             'timestamp' => now()->toIso8601String(),
@@ -66,7 +70,7 @@ class HealthController extends Controller
                 'queue' => $checks['queue']['status'],
                 'microsoft_entra_sso' => $entraSso->isEnabled() ? 'ENABLED' : 'DISABLED_BY_DEFAULT',
                 'hr_handover_safety_gate' => 'ENFORCED',
-                'dynamics_live_employee_creation' => 'DISABLED_BY_DEFAULT',
+                'dynamics_live_employee_creation' => $liveWritesBlocked ? 'DISABLED_BY_DEFAULT' : 'SANDBOX_OR_LIVE_PERMITTED',
             ],
         ], $overallHealthy ? 200 : 503);
     }

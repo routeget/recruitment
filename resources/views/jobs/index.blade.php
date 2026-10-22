@@ -125,6 +125,11 @@
                 </tbody>
             </table>
         </div>
+        @if($jobs->hasPages())
+            <div class="card-footer bg-white">
+                {{ $jobs->links() }}
+            </div>
+        @endif
     </div>
 </div>
 @endsection

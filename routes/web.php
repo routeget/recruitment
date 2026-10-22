@@ -120,6 +120,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/candidates/{candidate}/documents', [CandidateAndApplicationController::class, 'uploadDocument'])
             ->middleware('permission:candidates.manage')
             ->name('candidates.documents.upload');
+        Route::post('/candidates/{candidate}/consent', [CandidateAndApplicationController::class, 'updateConsent'])
+            ->middleware('permission:candidates.manage')
+            ->name('candidates.consent.update');
         Route::get('/documents/{document}/download', [CandidateAndApplicationController::class, 'downloadDocument'])
             ->middleware('permission:candidates.view')
             ->name('documents.download');
@@ -139,7 +142,7 @@ Route::middleware('auth')->group(function () {
 
         // Increment 4: Screening, Assessments, Interviews, Scorecards, Decisions & Analytics
         Route::get('/evaluations', [EvaluationAndDecisionController::class, 'index'])
-            ->middleware('permission:candidates.view')
+            ->middleware('permission:screening.manage,interviews.manage,decisions.manage,candidates.view')
             ->name('evaluations.index');
         Route::post('/evaluations/screening', [EvaluationAndDecisionController::class, 'storeScreening'])
             ->middleware('permission:screening.manage')
@@ -163,7 +166,7 @@ Route::middleware('auth')->group(function () {
 
         // Increment 5: Offers & Mandatory HR Validation / Handover Safety Gate
         Route::get('/offers', [OfferAndHrHandoverController::class, 'offersIndex'])
-            ->middleware('permission:offers.manage')
+            ->middleware('permission:offers.manage,offers.approve')
             ->name('offers.index');
         Route::post('/offers/templates', [OfferAndHrHandoverController::class, 'storeOfferTemplate'])
             ->middleware('permission:offers.manage')
@@ -175,21 +178,26 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:offers.approve')
             ->name('offers.issue');
         Route::post('/offers/{offer}/accept', [OfferAndHrHandoverController::class, 'acceptOffer'])
-            ->middleware('permission:offers.manage')
+            ->middleware('permission:offers.manage,offers.approve')
             ->name('offers.accept');
         Route::post('/offers/{offer}/revise', [OfferAndHrHandoverController::class, 'reviseOffer'])
             ->middleware('permission:offers.manage')
             ->name('offers.revise');
 
         Route::get('/hr-handover', [OfferAndHrHandoverController::class, 'hrHandoverIndex'])
+            ->middleware('permission:hr_validation.manage,hr_handover.approve,hr_handover.dispatch,dynamics.admin')
             ->name('hr-handover.index');
         Route::post('/hr-handover/{case}/checklist', [OfferAndHrHandoverController::class, 'updateChecklist'])
+            ->middleware('permission:hr_validation.manage,dynamics.admin')
             ->name('hr-handover.checklist');
         Route::post('/hr-handover/{case}/approve', [OfferAndHrHandoverController::class, 'approveHandover'])
+            ->middleware('permission:hr_handover.approve')
             ->name('hr-handover.approve');
         Route::post('/hr-handover/{case}/dispatch', [OfferAndHrHandoverController::class, 'dispatchHandover'])
+            ->middleware('permission:hr_handover.dispatch,dynamics.admin')
             ->name('hr-handover.dispatch');
         Route::post('/hr-handover/handovers/{handover}/reconcile', [OfferAndHrHandoverController::class, 'reconcileHandover'])
+            ->middleware('permission:hr_handover.dispatch,dynamics.admin')
             ->name('hr-handover.reconcile');
 
         // Increments 6, 7 & 8: AI Gateway, API Platform, Webhooks, MCP & Dynamics 365 Connector
@@ -250,6 +258,10 @@ Route::middleware('auth')->group(function () {
             ->name('admin.audit.index');
 
     }); // End tenant.user namespace.
+
+    Route::post('/admin/platform/support-context', [AuditGovernanceController::class, 'grantPlatformSupportContext'])
+        ->middleware('platform.superadmin')
+        ->name('admin.iam.support-context');
 
     // Platform Administration & Configuration Centre.
     Route::prefix('platformadmin')->middleware('platform.admin')->name('platform-admin.')->group(function () {

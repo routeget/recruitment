@@ -2,9 +2,17 @@
 
 This folder is the single authoritative location for project documentation created for the Unified Recruitment AI Platform.
 
-## Primary implementation baseline
+## Primary implementation baseline & authoritative reports
 
 - [Unified Recruitment AI Platform - Level 2 Specification v2.0](UNIFIED_RECRUITMENT_AI_PLATFORM_LEVEL_2_SPECIFICATION_v2.0.md)
+- [Microsoft Entra ID Enterprise SSO - Level 2 Specification](MICROSOFT_ENTRA_ID_ENTERPRISE_SSO_LEVEL_2_SPECIFICATION.md)
+- [Platform Super Admin & Configuration Centre Directive](ANTIGRAVITY_PLATFORM_SUPERADMIN_AND_CONFIGURATION_CENTRE_DIRECTIVE.md)
+- [Platform-Wide Functional & Security Audit Report](PLATFORM_WIDE_FUNCTIONAL_AUDIT.md)
+- [Platform Functional Defect Register (`D-01`..`D-08`)](PLATFORM_FUNCTIONAL_DEFECT_REGISTER.md)
+- [Complete Requirements Traceability Matrix](PLATFORM_REQUIREMENTS_TRACEABILITY.md)
+- [Alpha Requirements Traceability Matrix](ALPHA_REQUIREMENTS_TRACEABILITY.md)
+- [Alpha Test & Release Report](ALPHA_TEST_AND_RELEASE_REPORT.md)
+- [Development Continuation Directive Status](DEVELOPMENT_CONTINUATION_DIRECTIVE_STATUS.md)
 
 ## Documentation governance
 

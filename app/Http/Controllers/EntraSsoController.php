@@ -113,7 +113,7 @@ class EntraSsoController extends Controller
             'entra_tenant_id' => ['required', 'uuid'],
             'allowed_domains' => ['nullable', 'string', 'max:500'],
             'jit_provisioning_enabled' => ['nullable', 'boolean'],
-            'default_jit_role_slug' => ['nullable', 'string', 'in:recruiter,hiring_manager,interviewer,hr_Coordinator,hr_validator,compliance_auditor'],
+            'default_jit_role_slug' => ['nullable', 'string', 'in:recruiter,hiring_manager,interviewer,hr_Coordinator,hr_validator,hr_approver,compliance_auditor,auditor,recruitment_admin'],
             'require_sso_for_tenant' => ['nullable', 'boolean'],
             'allow_emergency_local_login' => ['nullable', 'boolean'],
             'is_enabled' => ['nullable', 'boolean'],
@@ -196,13 +196,20 @@ class EntraSsoController extends Controller
 
         $role = Role::query()->where('slug', $validated['role_slug'])->firstOrFail();
 
-        $created = $this->entraSso->createSsoInvitation(
-            $connection,
-            $validated['email'],
-            $role,
-            $request->user(),
-            $validated['expected_entra_object_id'] ?? null,
-        );
+        try {
+            $created = $this->entraSso->createSsoInvitation(
+                $connection,
+                $validated['email'],
+                $role,
+                $request->user(),
+                $validated['expected_entra_object_id'] ?? null,
+            );
+        } catch (EntraSsoException $e) {
+            return redirect()
+                ->route('admin.iam.index')
+                ->withErrors(['email' => $e->getMessage()])
+                ->with('sso_error_code', $e->errorCode);
+        }
 
         return redirect()
             ->route('admin.iam.index')

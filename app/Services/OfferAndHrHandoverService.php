@@ -674,6 +674,27 @@ class OfferAndHrHandoverService
                 return $handover->fresh(['approval']);
             }
 
+            if ($simulatedOutcome === 'live' && app(PlatformConfigService::class)->getBool('dynamics.global_live_writes_blocked')) {
+                $this->auditService->record(
+                    module: 'hr_handover',
+                    action: 'hr_handover.live_write_blocked',
+                    outcome: 'DENIED',
+                    errorCode: 'DYNAMICS_LIVE_WRITES_BLOCKED',
+                    entityType: 'hr_validation_case',
+                    entityId: (string) $lockedCase->id,
+                    metadata: ['idempotency_key' => $effectiveKey],
+                    tenantId: $tenantId,
+                    actorUserId: $actorUserId,
+                    actorType: $actorType,
+                    actorIdentifier: $actorIdentifier,
+                );
+
+                throw new HrHandoverGateNotSatisfiedException(
+                    'Live employee creation in Dynamics 365 Finance HR is blocked by platform governance policy (DYNAMICS_LIVE_WRITES_BLOCKED).',
+                    'DYNAMICS_LIVE_WRITES_BLOCKED'
+                );
+            }
+
             // Default: deterministic sandbox success (Rule HRH-07)
             $externalRequestId = 'DYN-REQ-'.strtoupper(substr((string) $handover->uuid, 0, 8));
             $externalEmployeeId = 'DYN-EMP-'.strtoupper(substr(hash('sha256', $effectiveKey), 0, 10));
@@ -922,7 +943,7 @@ class OfferAndHrHandoverService
             'tenant_id' => (int) $validationCase->tenant_id,
             'application_id' => (int) $application->id,
             'candidate_id' => (int) $candidate->id,
-            'candidate_email' => $candidate->primary_email,
+            'candidate_email' => $candidate->email ?? $candidate->primary_email,
             'candidate_first_name' => $candidate->first_name,
             'candidate_last_name' => $candidate->last_name,
             'offer_version_id' => (int) $offerVersion->id,

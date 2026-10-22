@@ -203,7 +203,7 @@
                                     </a>
                                 </li>
                             @endif
-                            @if(Route::has('evaluations.index') && (in_array('screening.manage', $activeUserPermissions ?? []) || in_array('interviews.manage', $activeUserPermissions ?? []) || in_array('decisions.manage', $activeUserPermissions ?? [])))
+                            @if(Route::has('evaluations.index') && (in_array('screening.manage', $activeUserPermissions ?? []) || in_array('interviews.manage', $activeUserPermissions ?? []) || in_array('decisions.manage', $activeUserPermissions ?? []) || in_array('candidates.view', $activeUserPermissions ?? [])))
                                 <li class="nav-item">
                                     <a class="nav-link {{ request()->routeIs('evaluations.*') ? 'active' : '' }}" href="{{ route('evaluations.index') }}">
                                         Screening, Interviews &amp; Decisions
@@ -214,14 +214,14 @@
 
                         <div class="nav-section-label">Offers &amp; HR Handover Gate</div>
                         <ul class="nav flex-column">
-                            @if(Route::has('offers.index') && (in_array('offers.manage', $activeUserPermissions ?? []) || in_array('offers.approve', $activeUserPermissions ?? []) || in_array('requisitions.view', $activeUserPermissions ?? [])))
+                            @if(Route::has('offers.index') && (in_array('offers.manage', $activeUserPermissions ?? []) || in_array('offers.approve', $activeUserPermissions ?? [])))
                                 <li class="nav-item">
                                     <a class="nav-link {{ request()->routeIs('offers.*') ? 'active' : '' }}" href="{{ route('offers.index') }}">
                                         Offer Management
                                     </a>
                                 </li>
                             @endif
-                            @if(Route::has('hr-handover.index') && (in_array('hr_validation.manage', $activeUserPermissions ?? []) || in_array('hr_handover.approve', $activeUserPermissions ?? []) || in_array('hr_handover.dispatch', $activeUserPermissions ?? []) || in_array('requisitions.view', $activeUserPermissions ?? [])))
+                            @if(Route::has('hr-handover.index') && (in_array('hr_validation.manage', $activeUserPermissions ?? []) || in_array('hr_handover.approve', $activeUserPermissions ?? []) || in_array('hr_handover.dispatch', $activeUserPermissions ?? []) || in_array('dynamics.admin', $activeUserPermissions ?? [])))
                                 <li class="nav-item">
                                     <a class="nav-link {{ request()->routeIs('hr-handover.*') ? 'active' : '' }}" href="{{ route('hr-handover.index') }}">
                                         HR Validation &amp; Handover Gate
@@ -239,14 +239,14 @@
                                     </a>
                                 </li>
                             @endif
-                            @if(Route::has('integrations.api.index') && (in_array('api.admin', $activeUserPermissions ?? []) || in_array('mcp.use', $activeUserPermissions ?? [])))
+                            @if(Route::has('integrations.api.index') && in_array('api.admin', $activeUserPermissions ?? []))
                                 <li class="nav-item">
                                     <a class="nav-link {{ request()->routeIs('integrations.api.*') ? 'active' : '' }}" href="{{ route('integrations.api.index') }}">
                                         API Platform, Webhooks &amp; MCP
                                     </a>
                                 </li>
                             @endif
-                            @if(Route::has('dynamics.index') && (in_array('dynamics.admin', $activeUserPermissions ?? []) || in_array('hr_handover.dispatch', $activeUserPermissions ?? [])))
+                            @if(Route::has('dynamics.index') && in_array('dynamics.admin', $activeUserPermissions ?? []))
                                 <li class="nav-item">
                                     <a class="nav-link {{ request()->routeIs('dynamics.*') ? 'active' : '' }}" href="{{ route('dynamics.index') }}">
                                         Dynamics 365 HR Connector

@@ -11,20 +11,21 @@ use Symfony\Component\HttpFoundation\Response;
 
 class RequirePermission
 {
-    public function handle(Request $request, Closure $next, string $permission): Response
+    public function handle(Request $request, Closure $next, string ...$permissions): Response
     {
         $user = Auth::user();
         $context = app(TenantContextService::class);
         $tenantId = $context->getActiveTenantId();
+        $permissionLabel = implode(' | ', $permissions);
 
-        if (! $user || ! $tenantId || ! $user->hasPermission($permission, $tenantId)) {
+        if (! $user || ! $tenantId || ! $user->hasAnyPermission($permissions, $tenantId)) {
             app(AuditService::class)->record(
                 module: 'security',
                 action: 'permission_denied',
                 outcome: 'DENIED',
                 errorCode: 'PERMISSION_DENIED',
                 metadata: [
-                    'required_permission' => $permission,
+                    'required_permission' => $permissionLabel,
                     'path' => $request->path(),
                     'method' => $request->method(),
                 ]
@@ -34,14 +35,14 @@ class RequirePermission
                 return response()->json([
                     'error' => [
                         'code' => 'PERMISSION_DENIED',
-                        'message' => "Missing required permission: {$permission}",
+                        'message' => "Missing required permission: {$permissionLabel}",
                         'correlation_id' => $context->getCorrelationId(),
                         'retryable' => false,
                     ],
                 ], 403);
             }
 
-            abort(403, "PERMISSION_DENIED: You do not have the required permission ({$permission}) in the active tenant.");
+            abort(403, "PERMISSION_DENIED: You do not have the required permission ({$permissionLabel}) in the active tenant.");
         }
 
         return $next($request);

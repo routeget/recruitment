@@ -570,10 +570,10 @@ class PlatformAdminService
                 'retention_days' => $retentionDays,
                 'ai_kill_switch' => false,
                 'ai_monthly_budget_usd' => 500.00,
-                'mcp_enabled' => true,
+                'mcp_enabled' => isset($data['mcp_enabled']) ? (bool) $data['mcp_enabled'] : false,
                 'dynamics_live_enabled' => false,
-                'sso_required' => false,
-                'sso_allow_local_fallback' => true,
+                'require_sso' => isset($data['require_sso']) ? (bool) $data['require_sso'] : (isset($data['sso_required']) ? (bool) $data['sso_required'] : false),
+                'allow_local_fallback' => isset($data['allow_local_fallback']) ? (bool) $data['allow_local_fallback'] : true,
                 'is_demo' => false,
             ]);
 
@@ -641,15 +641,20 @@ class PlatformAdminService
                 'status' => $locked->status,
                 'ai_kill_switch' => (bool) $locked->ai_kill_switch,
                 'mcp_enabled' => (bool) $locked->mcp_enabled,
-                'sso_required' => (bool) $locked->sso_required,
+                'require_sso' => (bool) $locked->require_sso,
+                'sso_required' => (bool) $locked->require_sso,
                 'retention_days' => (int) $locked->retention_days,
             ];
+
+            $requireSso = array_key_exists('require_sso', $data)
+                ? (bool) $data['require_sso']
+                : (array_key_exists('sso_required', $data) ? (bool) $data['sso_required'] : (bool) $locked->require_sso);
 
             $locked->update([
                 'status' => $newStatus,
                 'ai_kill_switch' => isset($data['ai_kill_switch']) ? (bool) $data['ai_kill_switch'] : (bool) $locked->ai_kill_switch,
                 'mcp_enabled' => isset($data['mcp_enabled']) ? (bool) $data['mcp_enabled'] : (bool) $locked->mcp_enabled,
-                'sso_required' => isset($data['sso_required']) ? (bool) $data['sso_required'] : (bool) $locked->sso_required,
+                'require_sso' => $requireSso,
                 'retention_days' => $retentionDays,
             ]);
 
@@ -657,7 +662,8 @@ class PlatformAdminService
                 'status' => $locked->status,
                 'ai_kill_switch' => (bool) $locked->ai_kill_switch,
                 'mcp_enabled' => (bool) $locked->mcp_enabled,
-                'sso_required' => (bool) $locked->sso_required,
+                'require_sso' => (bool) $locked->require_sso,
+                'sso_required' => (bool) $locked->require_sso,
                 'retention_days' => (int) $locked->retention_days,
             ];
 
@@ -754,7 +760,7 @@ class PlatformAdminService
                 entityType: 'WebhookSubscription',
                 entityId: (string) $locked->id,
                 metadata: [
-                    'endpoint_url' => $locked->endpoint_url,
+                    'endpoint_url' => $locked->target_url,
                     'reason' => $cleanReason,
                     'before' => ['is_active' => $before],
                     'after' => ['is_active' => $isActive],
