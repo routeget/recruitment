@@ -1,10 +1,12 @@
 <?php
 
+use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AuditGovernanceController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CandidateAndApplicationController;
 use App\Http\Controllers\CareerPortalController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EvaluationAndDecisionController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\JobPostingController;
 use App\Http\Controllers\OrganizationController;
@@ -117,6 +119,30 @@ Route::middleware('auth')->group(function () {
     Route::post('/applications/{application}/transition', [CandidateAndApplicationController::class, 'transitionApplicationStage'])
         ->middleware('permission:applications.manage')
         ->name('applications.transition');
+
+    // Increment 4: Screening, Assessments, Interviews, Scorecards, Decisions & Analytics
+    Route::get('/evaluations', [EvaluationAndDecisionController::class, 'index'])
+        ->middleware('permission:candidates.view')
+        ->name('evaluations.index');
+    Route::post('/evaluations/screening', [EvaluationAndDecisionController::class, 'storeScreening'])
+        ->middleware('permission:screening.manage')
+        ->name('evaluations.screening.store');
+    Route::post('/evaluations/assessments', [EvaluationAndDecisionController::class, 'storeAssessment'])
+        ->middleware('permission:screening.manage')
+        ->name('evaluations.assessments.store');
+    Route::post('/evaluations/interviews', [EvaluationAndDecisionController::class, 'storeInterview'])
+        ->middleware('permission:interviews.manage')
+        ->name('evaluations.interviews.store');
+    Route::post('/evaluations/scorecards', [EvaluationAndDecisionController::class, 'storeScorecard'])
+        ->middleware('permission:interviews.manage')
+        ->name('evaluations.scorecards.store');
+    Route::post('/evaluations/decisions', [EvaluationAndDecisionController::class, 'storeDecision'])
+        ->middleware('permission:decisions.manage')
+        ->name('evaluations.decisions.store');
+
+    Route::get('/analytics', [AnalyticsController::class, 'index'])
+        ->middleware('permission:reports.view')
+        ->name('analytics.index');
 
     // Increment 1: IAM & Audit
     Route::get('/admin/tenants-iam', [AuditGovernanceController::class, 'iamIndex'])
