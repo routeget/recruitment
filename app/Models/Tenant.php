@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use LogicException;
 
 class Tenant extends Model
 {
@@ -50,6 +51,18 @@ class Tenant extends Model
         static::creating(function (Tenant $tenant) {
             if (empty($tenant->uuid)) {
                 $tenant->uuid = (string) Str::uuid();
+            }
+
+            if (empty($tenant->slug) || ! preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', strtolower(trim((string) $tenant->slug)))) {
+                throw new LogicException('TENANT_SLUG_REQUIRED: A valid tenant slug is required at creation.');
+            }
+
+            $tenant->slug = strtolower(trim((string) $tenant->slug));
+        });
+
+        static::updating(function (Tenant $tenant) {
+            if ($tenant->isDirty('slug')) {
+                throw new LogicException('TENANT_SLUG_IMMUTABLE: A tenant slug cannot be changed after creation.');
             }
         });
     }

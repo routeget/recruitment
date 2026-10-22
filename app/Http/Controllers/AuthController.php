@@ -15,7 +15,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Route;
 use Illuminate\View\View;
 
 class AuthController extends Controller
@@ -23,7 +22,9 @@ class AuthController extends Controller
     public function showLogin(EntraSsoService $entraSso): View|RedirectResponse
     {
         if (Auth::check()) {
-            return redirect()->route('dashboard');
+            $authenticatedUser = Auth::user();
+
+            return redirect()->route($authenticatedUser && $authenticatedUser->isActivePlatformAdmin() ? 'platform-admin.index' : 'organization.home');
         }
 
         $demoPersonas = [];
@@ -79,7 +80,7 @@ class AuthController extends Controller
         }
 
         $candidateUser = User::where('email', strtolower($credentials['email']))->first();
-        if ($candidateUser !== null && ! $candidateUser->isActiveAccount()) {
+        if ($candidateUser !== null && $candidateUser->isActiveAccount() === false) {
             $audit->record(
                 module: 'auth',
                 action: 'login_blocked_account_suspended',
@@ -116,7 +117,7 @@ class AuthController extends Controller
             ])->onlyInput('email');
         }
 
-        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
+        if (Auth::attempt($credentials, $request->boolean('remember')) === false) {
             RateLimiter::hit($throttleKey, 60);
 
             $audit->record(
@@ -156,12 +157,12 @@ class AuthController extends Controller
             actorUserId: $user->id
         );
 
-        $defaultRedirect = ($user->isActivePlatformSuperAdmin() && $tenant === null && Route::has('platform-admin.index'))
-            ? route('platform-admin.index')
-            : route('dashboard');
+        // Namespace is selected from the authenticated platform authority, never from an untrusted intended URL.
+        $isPlatformAdmin = $user->isActivePlatformAdmin();
+        $defaultRedirect = $isPlatformAdmin ? route('platform-admin.index') : route('organization.home');
 
-        return redirect()->intended($defaultRedirect)
-            ->with('status', 'Authenticated into '.($tenant?->name ?? 'Platform Administration & Configuration Centre').'.');
+        return redirect()->to($defaultRedirect)
+            ->with('status', 'Authenticated into '.($isPlatformAdmin ? 'Platform Administration & Configuration Centre' : ($tenant?->name ?? 'your organization')).'.');
     }
 
     public function logout(Request $request, AuditService $audit): RedirectResponse
@@ -193,7 +194,7 @@ class AuthController extends Controller
         $user = Auth::user();
         $targetTenantId = (int) $validated['tenant_id'];
 
-        if (! $user->isMemberOfTenant($targetTenantId)) {
+        if ($user->isMemberOfTenant($targetTenantId) === false) {
             $audit->record(
                 module: 'security',
                 action: 'unauthorized_tenant_switch',

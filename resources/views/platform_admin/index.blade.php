@@ -7,7 +7,7 @@
     <div>
         <div class="d-flex align-items-center gap-2 mb-1">
             <span class="badge bg-danger">GLOBAL CONTROL PLANE</span>
-            <span class="badge bg-dark">Server-Authorized Platform Super Admin Only</span>
+            <span class="badge bg-dark">Authorized Platform Admin Namespace</span>
         </div>
         <h1 class="h3 fw-bold mb-1">Platform Administration &amp; Configuration Centre</h1>
         <p class="text-muted small mb-0">
@@ -16,12 +16,12 @@
         </p>
     </div>
     <div class="text-end small">
-        <div>Signed-in Super Admin: <strong>{{ auth()->user()->maskedEmail() }}</strong></div>
+        <div>Signed-in Platform Administrator: <strong>{{ auth()->user()->maskedEmail() }}</strong></div>
         <div>Account Type:
             @if(auth()->user()->isSyntheticDemoIdentity())
                 <span class="badge bg-warning text-dark">SYNTHETIC DEMO (.test)</span>
             @else
-                <span class="badge bg-success">REAL PRODUCTION SUPER ADMIN</span>
+                <span class="badge bg-success">REAL PLATFORM ADMIN</span>
             @endif
         </div>
     </div>
@@ -225,7 +225,8 @@
                 </div>
                 <div class="col-md-2">
                     <label for="new-tenant-slug" class="form-label small fw-semibold">Tenant Slug</label>
-                    <input type="text" id="new-tenant-slug" name="slug" class="form-control form-control-sm" placeholder="contoso-corp" required>
+                    <input type="text" id="new-tenant-slug" name="slug" class="form-control form-control-sm" placeholder="contoso-corp" pattern="[a-z0-9]+(-[a-z0-9]+)*" autocomplete="off" required>
+                    <div class="form-text small">Portal URL: career.tringers.com/{slug}/. Unique and immutable after creation.</div>
                 </div>
                 <div class="col-md-3">
                     <label for="new-tenant-domain" class="form-label small fw-semibold">Primary Domain (Optional)</label>
@@ -260,7 +261,7 @@
             <table class="table table-sm align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>ID / Slug</th>
+                        <th>ID / Slug (immutable)</th>
                         <th>Name &amp; Domain</th>
                         <th>Members</th>
                         <th>Lifecycle &amp; Governance Controls</th>
@@ -271,7 +272,8 @@
                     @foreach($tenants as $t)
                         <tr>
                             <td>
-                                <code>#{{ $t->id }}</code> <strong>{{ $t->slug }}</strong>
+                                <code>#{{ $t->id }}</code> <a href="{{ url('/'.$t->slug) }}" target="_blank" rel="noopener noreferrer" class="fw-semibold text-decoration-none">{{ $t->slug }}</a>
+                                <div class="small text-muted">career.tringers.com/{{ $t->slug }}/</div>
                                 @if($t->is_demo)
                                     <span class="badge bg-warning text-dark">DEMO</span>
                                 @endif
@@ -314,13 +316,17 @@
                                 </form>
                             </td>
                             <td>
-                                <form method="POST" action="{{ route('admin.iam.support-context') }}" class="d-flex gap-1">
-                                    @csrf
-                                    <input type="hidden" name="target_tenant_id" value="{{ $t->id }}">
-                                    <input type="text" name="support_ticket_reference" class="form-control form-control-sm" placeholder="TKT-101" required minlength="5" style="width: 90px;">
-                                    <input type="text" name="justification" class="form-control form-control-sm" placeholder="Support reason" required minlength="10" style="width: 130px;">
-                                    <button type="submit" class="btn btn-sm btn-outline-dark">Support Switch</button>
-                                </form>
+                                @if(auth()->user()->isActivePlatformSuperAdmin())
+                                    <form method="POST" action="{{ route('platform-admin.support-context') }}" class="d-flex gap-1">
+                                        @csrf
+                                        <input type="hidden" name="target_tenant_id" value="{{ $t->id }}">
+                                        <input type="text" name="support_ticket_reference" class="form-control form-control-sm" placeholder="TKT-101" required minlength="5" style="width: 90px;">
+                                        <input type="text" name="justification" class="form-control form-control-sm" placeholder="Support reason" required minlength="10" style="width: 130px;">
+                                        <button type="submit" class="btn btn-sm btn-outline-dark">Support Switch</button>
+                                    </form>
+                                @else
+                                    <span class="small text-muted">Super Admin approval required</span>
+                                @endif
                             </td>
                         </tr>
                     @endforeach
@@ -1007,7 +1013,7 @@
             <div class="d-flex gap-2">
                 <a href="{{ route('health') }}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">JSON `/health`</a>
                 <a href="{{ route('health.ready') }}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">JSON `/health/ready`</a>
-                <a href="{{ route('system.diagnostics') }}" class="btn btn-sm btn-outline-secondary">Detailed Diagnostics</a>
+                <a href="{{ route('platform-admin.system.diagnostics') }}" class="btn btn-sm btn-outline-secondary">Detailed Diagnostics</a>
             </div>
         </div>
         <div class="table-responsive">

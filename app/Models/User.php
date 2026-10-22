@@ -68,6 +68,18 @@ class User extends Authenticatable
         return $this->isActiveAccount() && (bool) $this->is_platform_superadmin === true;
     }
 
+    /**
+     * Platform administration access. Super Admin authority remains separately testable
+     * for operations that require the highest privilege.
+     */
+    public function isActivePlatformAdmin(): bool
+    {
+        return $this->isActiveAccount() && (
+            $this->isActivePlatformSuperAdmin()
+            || in_array(strtolower((string) $this->platform_role), ['platform_admin', 'platform_super_admin', 'platform_superadmin'], true)
+        );
+    }
+
     public function isSyntheticDemoIdentity(): bool
     {
         $email = strtolower((string) $this->email);

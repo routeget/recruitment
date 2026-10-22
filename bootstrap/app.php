@@ -3,7 +3,9 @@
 use App\Exceptions\HrHandoverGateNotSatisfiedException;
 use App\Http\Middleware\EnforceTenantAndSecurityContext;
 use App\Http\Middleware\RequirePermission;
+use App\Http\Middleware\RequirePlatformAdmin;
 use App\Http\Middleware\RequirePlatformSuperAdmin;
+use App\Http\Middleware\RequireTenantUser;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -31,6 +33,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant.context' => EnforceTenantAndSecurityContext::class,
             'permission' => RequirePermission::class,
             'platform.superadmin' => RequirePlatformSuperAdmin::class,
+            'platform.admin' => RequirePlatformAdmin::class,
+            'tenant.user' => RequireTenantUser::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

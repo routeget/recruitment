@@ -79,7 +79,7 @@
 
     <header class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary sticky-top px-3">
         <div class="container-fluid">
-            <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="{{ auth()->check() ? route('dashboard') : (Route::has('careers.index') ? route('careers.index') : route('login')) }}">
+            <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="{{ auth()->check() ? (auth()->user()->isActivePlatformAdmin() ? route('platform-admin.index') : route('organization.home')) : (Route::has('careers.index') ? route('careers.index') : route('login')) }}">
                 <span class="badge bg-primary">{{ $platformBranding['brand_code'] ?? 'URAP' }}</span>
                 <span>{{ $platformBranding['display_name'] ?? 'Unified Recruitment AI Platform' }}</span>
                 <span class="badge bg-warning text-dark ms-1">Alpha</span>
@@ -100,8 +100,8 @@
 
                 <div class="d-flex align-items-center gap-3 flex-wrap">
                     @auth
-                        @if(auth()->user()->isActivePlatformSuperAdmin())
-                            <span class="badge bg-danger text-white">GLOBAL PLATFORM SUPER ADMIN</span>
+                        @if(auth()->user()->isActivePlatformAdmin())
+                            <span class="badge bg-danger text-white">GLOBAL PLATFORM ADMINISTRATION</span>
                         @endif
                         @if(isset($activeTenant) && $activeTenant)
                             <div class="d-flex align-items-center gap-2 text-light small">
@@ -136,12 +136,22 @@
             @auth
                 <nav class="col-md-3 col-lg-2 d-md-block urap-sidebar py-3 collapse" id="sidebarMenu" aria-label="Recruitment Platform Navigation">
                     <div class="position-sticky">
-                        @if(auth()->user()->isActivePlatformSuperAdmin() && Route::has('platform-admin.index'))
+                        @if(auth()->user()->isActivePlatformAdmin() && Route::has('platform-admin.index'))
                             <div class="nav-section-label text-warning">Platform Administration</div>
                             <ul class="nav flex-column mb-2">
                                 <li class="nav-item">
-                                    <a class="nav-link {{ request()->routeIs('platform-admin.*') ? 'active' : '' }}" href="{{ route('platform-admin.index') }}">
+                                    <a class="nav-link {{ request()->routeIs('platform-admin.index', 'platform-admin.section') ? 'active' : '' }}" href="{{ route('platform-admin.index') }}">
                                         Platform Configuration Centre
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link {{ request()->routeIs('platform-admin.integrations.api') ? 'active' : '' }}" href="{{ route('platform-admin.integrations.api') }}">
+                                        API Integrations
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link {{ request()->routeIs('platform-admin.system.diagnostics') ? 'active' : '' }}" href="{{ route('platform-admin.system.diagnostics') }}">
+                                        System Diagnostics
                                     </a>
                                 </li>
                             </ul>
@@ -150,7 +160,7 @@
                         <div class="nav-section-label">Core Workspace</div>
                         <ul class="nav flex-column">
                             <li class="nav-item">
-                                <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('dashboard') }}">
+                                <a class="nav-link {{ request()->routeIs('dashboard', 'organization.home') ? 'active' : '' }}" href="{{ route('organization.home') }}">
                                     Dashboard &amp; Overview
                                 </a>
                             </li>
@@ -264,11 +274,6 @@
                                     </a>
                                 </li>
                             @endif
-                            <li class="nav-item">
-                                <a class="nav-link {{ request()->routeIs('system.diagnostics') ? 'active' : '' }}" href="{{ route('system.diagnostics') }}">
-                                    Operational Diagnostics
-                                </a>
-                            </li>
                         </ul>
                     </div>
                 </nav>

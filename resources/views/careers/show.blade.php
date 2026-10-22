@@ -11,7 +11,7 @@
 <div class="mb-4">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb mb-1 small">
-            <li class="breadcrumb-item"><a href="{{ route('careers.index') }}">Public Career Portal</a></li>
+            <li class="breadcrumb-item"><a href="{{ route('tenant.careers.index', ['tenantSlug' => $tenant->slug]) }}">{{ $tenant->name }} Careers</a></li>
             <li class="breadcrumb-item active" aria-current="page">{{ $job->title }}</li>
         </ol>
     </nav>

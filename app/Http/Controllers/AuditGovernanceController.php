@@ -210,7 +210,7 @@ class AuditGovernanceController extends Controller
             tenantId: $targetTenant->id
         );
 
-        return redirect()->route('admin.iam.index')
+        return redirect()->route('platform-admin.index', ['tab' => 'tenants'])
             ->with('status', "Audited platform support context activated for {$targetTenant->name} (Ticket: {$validated['support_ticket_reference']}).");
     }
 }

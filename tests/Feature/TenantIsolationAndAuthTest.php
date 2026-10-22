@@ -43,7 +43,7 @@ class TenantIsolationAndAuthTest extends TestCase
             'password' => 'AlphaDemo#2026!',
         ]);
 
-        $response->assertRedirect(route('dashboard'));
+        $response->assertRedirect(route('organization.home'));
         $this->assertAuthenticated();
 
         $dashboard = $this->get('/dashboard');
@@ -87,5 +87,96 @@ class TenantIsolationAndAuthTest extends TestCase
 
         $this->expectException(LogicException::class);
         $event->update(['outcome' => 'TAMPERED']);
+    }
+
+    public function test_public_root_is_aggregate_career_portal_and_tenant_slug_route_is_scoped(): void
+    {
+        $root = $this->get('/');
+        $root->assertOk()
+            ->assertSee('Explore Approved Open Positions')
+            ->assertSee('Senior AI Platform Architect (Demo)');
+
+        $tenantPortal = $this->get('/acme-demo');
+        $tenantPortal->assertOk()
+            ->assertSee('Explore Open Positions at Acme Global Tech (Demo)')
+            ->assertSee('Senior AI Platform Architect (Demo)');
+
+        $this->get('/does-not-exist')->assertNotFound();
+    }
+
+    public function test_platform_admin_and_tenant_namespaces_are_isolated(): void
+    {
+        $tenantUser = User::where('email', 'recruiter@acme-demo.test')->firstOrFail();
+        $platformSuperAdmin = User::where('email', 'platform.superadmin@tringers.test')->firstOrFail();
+
+        $this->actingAs($tenantUser)->get('/platformadmin')->assertForbidden();
+        $this->actingAs($platformSuperAdmin)->get('/organization')->assertForbidden();
+
+        $this->actingAs($platformSuperAdmin)->get('/platformadmin')->assertOk();
+        $this->assertSame('/platformadmin', parse_url(route('platform-admin.index'), PHP_URL_PATH));
+        $this->assertSame('/platformadmin/integrations/api', parse_url(route('platform-admin.integrations.api'), PHP_URL_PATH));
+    }
+
+    public function test_platform_admin_role_is_allowed_platform_landing_but_not_tenant_namespace(): void
+    {
+        $platformAdmin = User::where('email', 'platform.superadmin@tringers.test')->firstOrFail();
+        $platformAdmin->forceFill([
+            'is_platform_superadmin' => false,
+            'platform_role' => 'platform_admin',
+        ])->save();
+
+        $this->post('/login', [
+            'email' => 'platform.superadmin@tringers.test',
+            'password' => 'AlphaDemo#2026!',
+        ])->assertRedirect(route('platform-admin.index'));
+        $this->assertAuthenticated();
+        $this->get('/platformadmin')->assertOk();
+        $this->get('/organization')->assertForbidden();
+    }
+
+    public function test_tenant_slug_is_immutable_after_creation(): void
+    {
+        $tenant = Tenant::where('slug', 'acme-demo')->firstOrFail();
+
+        try {
+            $tenant->slug = 'acme-renamed';
+            $tenant->save();
+            $this->fail('Changing a tenant slug after creation must be rejected.');
+        } catch (LogicException $exception) {
+            $this->assertStringContainsString('TENANT_SLUG_IMMUTABLE', $exception->getMessage());
+        }
+
+        $this->assertSame('acme-demo', $tenant->fresh()->slug);
+    }
+
+    public function test_tenant_creation_requires_a_unique_non_reserved_slug(): void
+    {
+        $platformAdmin = User::where('email', 'platform.superadmin@tringers.test')->firstOrFail();
+
+        $this->actingAs($platformAdmin)->post('/platformadmin/tenants', [
+            'name' => 'Duplicate Tenant',
+            'slug' => 'acme-demo',
+            'reason' => 'Testing unique tenant slug validation.',
+        ])->assertSessionHasErrors('slug');
+
+        $this->actingAs($platformAdmin)->post('/platformadmin/tenants', [
+            'name' => 'Reserved Tenant',
+            'slug' => 'platformadmin',
+            'reason' => 'Testing reserved tenant slug validation.',
+        ])->assertSessionHasErrors('slug');
+
+        $platformAdmin->forceFill([
+            'is_platform_superadmin' => false,
+            'platform_role' => 'platform_admin',
+        ])->save();
+
+        $this->actingAs($platformAdmin)->post('/platformadmin/tenants', [
+            'name' => 'Codex Hiring',
+            'slug' => 'codex-test',
+            'reason' => 'Provisioning a new tenant with an immutable career portal slug.',
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('tenants', ['slug' => 'codex-test', 'name' => 'Codex Hiring']);
+        $this->get('/codex-test')->assertOk()->assertSee('Explore Open Positions at Codex Hiring');
     }
 }

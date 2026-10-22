@@ -16,17 +16,19 @@ class CareerPortalController extends Controller
     {
         $query = JobPosting::withoutTenantScope()
             ->with(['tenant', 'department', 'location'])
+            ->whereHas('tenant', fn ($tenantQuery) => $tenantQuery->where('status', 'ACTIVE'))
             ->where('status', JobPosting::STATUS_PUBLISHED)
             ->where(function ($q) {
                 $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
             })
             ->orderByDesc('published_at');
 
+        $selectedTenant = null;
         if ($request->filled('tenant')) {
-            $tenant = Tenant::where('slug', $request->string('tenant')->toString())->first();
-            if ($tenant) {
-                $query->where('tenant_id', $tenant->id);
-            }
+            $selectedTenant = Tenant::where('slug', $request->string('tenant')->toString())
+                ->where('status', 'ACTIVE')
+                ->firstOrFail();
+            $query->where('tenant_id', $selectedTenant->id);
         }
 
         if ($request->filled('work_mode')) {
@@ -44,7 +46,17 @@ class CareerPortalController extends Controller
         return view('careers.index', [
             'jobs' => $query->paginate(12)->withQueryString(),
             'tenants' => Tenant::where('status', 'ACTIVE')->orderBy('name')->get(),
+            'tenant' => null,
         ]);
+    }
+
+    public function tenantIndex(Request $request, string $tenantSlug): View
+    {
+        $tenant = Tenant::where('slug', $tenantSlug)->where('status', 'ACTIVE')->firstOrFail();
+        // The path is authoritative; a query-string tenant must not switch the portal context.
+        $request->query->set('tenant', $tenant->slug);
+
+        return $this->index($request)->with('tenant', $tenant);
     }
 
     public function showJob(string $tenantSlug, string $jobSlug): View
@@ -118,7 +130,7 @@ class CareerPortalController extends Controller
             );
         }
 
-        return redirect()->route('careers.show', [$tenant->slug, $job->slug])
+        return redirect()->route('careers.show', ['tenantSlug' => $tenant->slug, 'jobSlug' => $job->slug])
             ->with('status', "Application {$application->application_number} received for {$job->title}. Status: {$application->candidate_visible_status}.");
     }
 
@@ -151,7 +163,7 @@ class CareerPortalController extends Controller
 
     public function robots(): Response
     {
-        $content = "User-agent: *\nAllow: /careers\nDisallow: /admin\nDisallow: /candidates\nDisallow: /applications\nDisallow: /offers\nDisallow: /hr-handover\nSitemap: ".route('careers.sitemap')."\n";
+        $content = "User-agent: *\nAllow: /\nAllow: /*/jobs/\nDisallow: /platformadmin\nDisallow: /admin\nDisallow: /candidates\nDisallow: /applications\nDisallow: /offers\nDisallow: /hr-handover\nSitemap: ".route('careers.sitemap')."\n";
 
         return response($content, 200, ['Content-Type' => 'text/plain; charset=UTF-8']);
     }

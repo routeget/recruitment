@@ -248,20 +248,20 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
         $this->assertFalse($syntheticAfterSeed->isActivePlatformSuperAdmin());
         $this->assertSame('SUSPENDED', $syntheticAfterSeed->status);
 
-        // Retired synthetic account cannot authenticate or access /platform-admin
+        // Retired synthetic account cannot authenticate or access /platformadmin
         $this->post('/login', [
             'email' => 'platform.superadmin@tringers.test',
             'password' => 'AlphaDemo#2026!',
         ])->assertSessionHasErrors('email');
-        $this->actingAs($syntheticAfterSeed)->get('/platform-admin')->assertStatus(403);
+        $this->actingAs($syntheticAfterSeed)->get('/platformadmin')->assertStatus(403);
     }
 
     public function test_authorization_matrix_denies_guest_tenant_admin_recruiter_candidate_suspended_and_api_mcp_principals(): void
     {
         // 1. Unauthenticated guest -> redirected to login / 401 JSON
-        $this->get('/platform-admin')->assertRedirect('/login');
-        $this->getJson('/platform-admin')->assertStatus(401);
-        $this->post('/platform-admin/settings/branding', ['reason' => 'Unauthorized mutation'])->assertRedirect('/login');
+        $this->get('/platformadmin')->assertRedirect('/login');
+        $this->getJson('/platformadmin')->assertStatus(401);
+        $this->post('/platformadmin/settings/branding', ['reason' => 'Unauthorized mutation'])->assertRedirect('/login');
 
         // 2. Mass assignment cannot set is_platform_superadmin
         $massAssigned = User::create([
@@ -272,18 +272,18 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
         ]);
         $this->assertFalse($massAssigned->fresh()->isActivePlatformSuperAdmin());
 
-        // 3. Tenant Admin is denied all /platform-admin routes and does not see Platform Configuration Centre link
+        // 3. Tenant Admin is denied all /platformadmin routes and does not see Platform Configuration Centre link
         $tenantAdmin = User::where('email', 'admin@acme-demo.test')->firstOrFail();
         $dashboardHtml = $this->actingAs($tenantAdmin)->get('/dashboard')->assertOk()->getContent();
         $this->assertStringNotContainsString('Platform Configuration Centre', (string) $dashboardHtml);
 
-        $this->actingAs($tenantAdmin)->get('/platform-admin')->assertStatus(403);
-        $this->actingAs($tenantAdmin)->getJson('/platform-admin')->assertStatus(403)->assertJsonPath('error.code', 'PLATFORM_SUPERADMIN_REQUIRED');
-        $this->actingAs($tenantAdmin)->post('/platform-admin/settings/branding', [
+        $this->actingAs($tenantAdmin)->get('/platformadmin')->assertStatus(403);
+        $this->actingAs($tenantAdmin)->getJson('/platformadmin')->assertStatus(403)->assertJsonPath('error.code', 'PLATFORM_ADMIN_REQUIRED');
+        $this->actingAs($tenantAdmin)->post('/platformadmin/settings/branding', [
             'settings' => ['platform.display_name' => 'Hijacked Name'],
             'reason' => 'Tenant admin attempting global mutation',
         ])->assertStatus(403);
-        $this->actingAs($tenantAdmin)->post('/platform-admin/tenants', [
+        $this->actingAs($tenantAdmin)->post('/platformadmin/tenants', [
             'name' => 'Rogue Tenant',
             'slug' => 'rogue-tenant',
             'reason' => 'Unauthorized tenant creation',
@@ -312,13 +312,13 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
             'status' => 'ACTIVE',
         ]);
         $this->assertFalse($fakeRoleHolder->fresh()->isActivePlatformSuperAdmin());
-        $this->actingAs($fakeRoleHolder)->get('/platform-admin')->assertStatus(403);
+        $this->actingAs($fakeRoleHolder)->get('/platformadmin')->assertStatus(403);
 
         // 6. Recruiter is denied
         $recruiter = User::where('email', 'recruiter@acme-demo.test')->firstOrFail();
-        $this->actingAs($recruiter)->get('/platform-admin')->assertStatus(403);
+        $this->actingAs($recruiter)->get('/platformadmin')->assertStatus(403);
 
-        // 7. API / MCP machine principal bearer token cannot access /platform-admin
+        // 7. API / MCP machine principal bearer token cannot access /platformadmin
         $tenant = Tenant::where('slug', 'acme-demo')->firstOrFail();
         $clientRes = app(ApiAndMcpPlatformService::class)->createApiClient(
             'Machine Bot',
@@ -329,7 +329,7 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
         auth()->logout();
         $bearer = $clientRes['client']->client_id.':'.$clientRes['raw_secret'];
         $this->withHeaders(['Authorization' => 'Bearer '.$bearer, 'Accept' => 'application/json'])
-            ->getJson('/platform-admin')
+            ->getJson('/platformadmin')
             ->assertStatus(401);
     }
 
@@ -360,7 +360,7 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
 
         // 1. All 11 sections render for active Platform Super Admin and never expose secrets
         foreach (['overview', 'branding', 'tenants', 'admins', 'auth-sso', 'ai-governance', 'api-mcp', 'integrations', 'security', 'audit', 'readiness'] as $tab) {
-            $resp = $this->actingAs($superAdmin)->get('/platform-admin?tab='.$tab);
+            $resp = $this->actingAs($superAdmin)->get('/platformadmin?tab='.$tab);
             $resp->assertOk();
             $html = (string) $resp->getContent();
             $this->assertStringContainsString('Platform Administration &amp; Configuration Centre', $html);
@@ -369,7 +369,7 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
         }
 
         // 2. Arbitrary/unregistered key is rejected with no partial writes
-        $this->actingAs($superAdmin)->post('/platform-admin/settings/branding', [
+        $this->actingAs($superAdmin)->post('/platformadmin/settings/branding', [
             'settings' => [
                 'platform.display_name' => 'Should Not Persist',
                 'arbitrary.injected_key' => 'evil_value',
@@ -379,7 +379,7 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
         $this->assertSame('Unified Recruitment AI Platform', app(PlatformConfigService::class)->getString('platform.display_name'));
 
         // 3. Valid branding update persists, increments version, audits before/after, and updates live UI + /careers
-        $this->actingAs($superAdmin)->post('/platform-admin/settings/branding', [
+        $this->actingAs($superAdmin)->post('/platformadmin/settings/branding', [
             'settings' => [
                 'platform.display_name' => 'Tringers Enterprise Recruitment Cloud',
                 'platform.brand_code' => 'TERC',
@@ -400,7 +400,7 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
         $this->assertStringContainsString('Tringers Enterprise Recruitment Cloud', $careersHtml);
 
         // 4. Optimistic locking rejects stale expected_version
-        $this->actingAs($superAdmin)->post('/platform-admin/settings/branding', [
+        $this->actingAs($superAdmin)->post('/platformadmin/settings/branding', [
             'settings' => [
                 'platform.display_name' => 'Stale Overwrite Attempt',
                 'platform.brand_code' => 'TERC',
@@ -417,7 +417,7 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
         $this->assertSame('Tringers Enterprise Recruitment Cloud', app(PlatformConfigService::class)->getString('platform.display_name'));
 
         // 5. Global AI Kill Switch immediately halts AiGatewayService::executeTask
-        $this->actingAs($superAdmin)->post('/platform-admin/settings/ai_governance', [
+        $this->actingAs($superAdmin)->post('/platformadmin/settings/ai_governance', [
             'settings' => [
                 'ai.global_kill_switch' => '1',
                 'ai.global_monthly_budget_cap_minor' => 200000,
@@ -441,7 +441,7 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
         }
 
         // 6. Disabling api.global_mcp_enabled immediately causes /mcp/v1/tools to return 503 MCP_GLOBALLY_DISABLED
-        $this->actingAs($superAdmin)->post('/platform-admin/settings/api_mcp', [
+        $this->actingAs($superAdmin)->post('/platformadmin/settings/api_mcp', [
             'settings' => [
                 'api.global_mcp_enabled' => '0',
                 'webhooks.global_delivery_enabled' => '0',
@@ -471,7 +471,7 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
         $this->assertSame('BLOCKED_BY_PLATFORM_SAFETY_GATE', $updatedDyn->last_health_status);
 
         // 8. Tenant Lifecycle creation & suspension + retention floor check
-        $this->actingAs($superAdmin)->post('/platform-admin/tenants', [
+        $this->actingAs($superAdmin)->post('/platformadmin/tenants', [
             'name' => 'Northwind Aviation Ltd',
             'slug' => 'northwind-aviation',
             'default_currency' => 'GBP',
@@ -479,7 +479,7 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
             'reason' => 'Attempting below-floor retention',
         ])->assertSessionHasErrors('retention_days');
 
-        $this->actingAs($superAdmin)->post('/platform-admin/tenants', [
+        $this->actingAs($superAdmin)->post('/platformadmin/tenants', [
             'name' => 'Northwind Aviation Ltd',
             'slug' => 'northwind-aviation',
             'default_currency' => 'GBP',
@@ -491,7 +491,7 @@ class PlatformSuperAdminAndConfigCentreTest extends TestCase
         $this->assertFalse($northwind->is_demo);
         $this->assertSame('ACTIVE', $northwind->status);
 
-        $this->actingAs($superAdmin)->post("/platform-admin/tenants/{$northwind->id}/lifecycle", [
+        $this->actingAs($superAdmin)->post("/platformadmin/tenants/{$northwind->id}/lifecycle", [
             'status' => 'SUSPENDED',
             'ai_kill_switch' => '1',
             'mcp_enabled' => '0',
