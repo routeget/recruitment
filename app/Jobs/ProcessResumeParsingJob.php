@@ -67,6 +67,10 @@ class ProcessResumeParsingJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        if (in_array((string) $parseJob->error_code, ['DSAR_ANONYMIZED', 'CONSENT_OR_DSAR_BLOCKED'], true)) {
+            return;
+        }
+
         $parseJob->update([
             'status' => ResumeParseJob::STATUS_FAILED,
             'error_code' => 'QUEUE_WORKER_EXHAUSTED',

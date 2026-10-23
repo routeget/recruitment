@@ -9,6 +9,9 @@ use App\Models\AiPromptVersion;
 use App\Models\AiProviderConfig;
 use App\Models\AiTaskRoute;
 use App\Models\AiTaskRun;
+use App\Models\Application;
+use App\Models\Candidate;
+use App\Models\ResumeParseJob;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Ai\Adapters\AnthropicClaudeAdapter;
@@ -409,6 +412,42 @@ class AiGatewayService
             throw new InvalidArgumentException("AI task '{$taskType}' is prohibited by platform governance policy (AI_PROHIBITED_USE).");
         }
 
+        $entityType = isset($options['entity_type']) ? (string) $options['entity_type'] : null;
+        $entityId = isset($options['entity_id']) && is_numeric($options['entity_id']) ? (int) $options['entity_id'] : null;
+
+        if ($entityType !== null && $entityId !== null && in_array($entityType, ['Candidate', 'Application', 'ResumeParseJob'], true)) {
+            $subjectCandidate = match ($entityType) {
+                'Candidate' => Candidate::withoutGlobalScopes()->where('tenant_id', $tenantId)->find($entityId),
+                'Application' => ($app = Application::withoutGlobalScopes()->where('tenant_id', $tenantId)->find($entityId))
+                    ? Candidate::withoutGlobalScopes()->where('tenant_id', $tenantId)->find($app->candidate_id)
+                    : null,
+                'ResumeParseJob' => ($pj = ResumeParseJob::withoutGlobalScopes()->where('tenant_id', $tenantId)->find($entityId))
+                    ? Candidate::withoutGlobalScopes()->where('tenant_id', $tenantId)->find($pj->candidate_id)
+                    : null,
+            };
+
+            if ($subjectCandidate !== null && (! $subjectCandidate->consent_given || in_array((string) $subjectCandidate->dsar_status, ['RESTRICTION_REQUESTED', 'DELETION_REQUESTED', 'ANONYMIZED'], true))) {
+                $this->auditService->record(
+                    module: 'ai_gateway',
+                    action: 'ai.candidate_privacy_blocked',
+                    outcome: 'DENIED',
+                    errorCode: 'CONSENT_OR_DSAR_BLOCKED',
+                    entityType: $entityType,
+                    entityId: (string) $entityId,
+                    metadata: [
+                        'task_type' => $taskType,
+                        'candidate_id' => $subjectCandidate->id,
+                        'consent_given' => (bool) $subjectCandidate->consent_given,
+                        'dsar_status' => (string) $subjectCandidate->dsar_status,
+                    ],
+                    tenantId: $tenantId,
+                    actorUserId: $actor ? (int) $actor->id : null,
+                );
+
+                throw new RuntimeException('CONSENT_OR_DSAR_BLOCKED: AI task execution is prohibited because candidate privacy consent is withdrawn or DSAR restriction/deletion is active.', 409);
+            }
+        }
+
         $canonicalTask = self::ALLOWED_TASKS[$taskType]['canonical_key'];
         $taskRoute = AiTaskRoute::withoutGlobalScopes()
             ->where('tenant_id', $tenantId)
@@ -579,11 +618,11 @@ class AiGatewayService
                         $execResult['execution_mode'] = 'fallback_'.$execResult['execution_mode'];
                     }
                 } else {
-                    $this->recordFailedTaskRun($tenantId, $actor, $taskType, $providerConfig, $promptVersion, $redactedInput, $primaryError);
+                    $this->recordFailedTaskRun($tenantId, $actor, $taskType, $providerConfig, $promptVersion, $redactedInput, $primaryError, null, false, $options);
                     throw $primaryError;
                 }
             } else {
-                $this->recordFailedTaskRun($tenantId, $actor, $taskType, $providerConfig, $redactedInput ? $promptVersion : null, $redactedInput, $primaryError);
+                $this->recordFailedTaskRun($tenantId, $actor, $taskType, $providerConfig, $redactedInput ? $promptVersion : null, $redactedInput, $primaryError, null, false, $options);
                 throw $primaryError;
             }
         }
@@ -608,7 +647,7 @@ class AiGatewayService
 
         if (! $schemaValid) {
             $schemaException = new RuntimeException("SCHEMA_VALIDATION_FAILED: Provider output for '{$taskType}' is missing required schema keys.", 422);
-            $this->recordFailedTaskRun($tenantId, $actor, $taskType, $activeProviderConfig, $promptVersion, $redactedInput, $schemaException, $structuredOutput, false);
+            $this->recordFailedTaskRun($tenantId, $actor, $taskType, $activeProviderConfig, $promptVersion, $redactedInput, $schemaException, $structuredOutput, false, $options);
             throw $schemaException;
         }
 
@@ -734,6 +773,7 @@ class AiGatewayService
 
     /**
      * @param  array<string, mixed>|null  $rawOutput
+     * @param  array<string, mixed>  $options
      */
     private function recordFailedTaskRun(
         int $tenantId,
@@ -744,7 +784,8 @@ class AiGatewayService
         string $redactedInput,
         RuntimeException $error,
         ?array $rawOutput = null,
-        bool $schemaValid = false
+        bool $schemaValid = false,
+        array $options = []
     ): void {
         $parts = explode(':', $error->getMessage(), 2);
         $errorCode = trim($parts[0]) ?: 'AI_EXECUTION_FAILED';
@@ -774,6 +815,8 @@ class AiGatewayService
             'error_code' => substr($errorCode, 0, 60),
             'error_message' => $sanitizedMessage,
             'correlation_id' => $this->tenantContext->getCorrelationId(),
+            'entity_type' => isset($options['entity_type']) ? (string) $options['entity_type'] : null,
+            'entity_id' => isset($options['entity_id']) && is_numeric($options['entity_id']) ? (int) $options['entity_id'] : null,
         ]);
 
         $this->auditService->record(
