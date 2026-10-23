@@ -2,19 +2,31 @@
 
 namespace App\Services;
 
+use App\Models\AiTaskRun;
 use App\Models\Application;
 use App\Models\ApplicationStageEvent;
+use App\Models\Assessment;
 use App\Models\Candidate;
 use App\Models\CandidateDocument;
+use App\Models\HiringDecision;
+use App\Models\HrHandover;
+use App\Models\HrHandoverApproval;
+use App\Models\HrValidationCase;
+use App\Models\Interview;
+use App\Models\InterviewScorecard;
 use App\Models\JobPosting;
 use App\Models\ResumeParseJob;
+use App\Models\ScreeningEvaluation;
 use App\Models\Tenant;
+use App\Models\TransactionalOutboxEvent;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
+use Throwable;
 
 class CandidateAndApplicationService
 {
@@ -490,84 +502,368 @@ class CandidateAndApplicationService
     {
         $this->context->assertModelBelongsToActiveTenant($candidate, 'Candidate');
 
-        return DB::transaction(function () use ($candidate, $data, $actor): Candidate {
-            $locked = Candidate::withoutTenantScope()->lockForUpdate()->findOrFail($candidate->id);
+        try {
+            return DB::transaction(function () use ($candidate, $data, $actor): Candidate {
+                $locked = Candidate::withoutTenantScope()->lockForUpdate()->findOrFail($candidate->id);
 
-            $consentGiven = isset($data['consent_given']) ? (bool) $data['consent_given'] : (bool) $locked->consent_given;
-            $dsarStatus = (string) ($data['dsar_status'] ?? $locked->dsar_status ?? 'NONE');
+                $consentGiven = isset($data['consent_given']) ? (bool) $data['consent_given'] : (bool) $locked->consent_given;
+                $dsarStatus = (string) ($data['dsar_status'] ?? $locked->dsar_status ?? 'NONE');
+                $scrubbedParseJobsCount = 0;
+                $scrubbedAiTaskRunsCount = 0;
+                $deletedDocumentsCount = 0;
 
-            if ($dsarStatus === 'ANONYMIZED') {
-                $consentGiven = false;
-                $documents = CandidateDocument::withoutTenantScope()
-                    ->where('tenant_id', $locked->tenant_id)
-                    ->where('candidate_id', $locked->id)
-                    ->get();
+                if ($dsarStatus === 'ANONYMIZED') {
+                    $consentGiven = false;
+                    $originalEmail = strtolower(trim((string) $locked->email));
+                    $originalFullName = trim(((string) $locked->first_name).' '.((string) $locked->last_name));
 
-                foreach ($documents as $doc) {
-                    if ($doc->storage_disk && $doc->storage_path) {
-                        Storage::disk($doc->storage_disk)->delete($doc->storage_path);
+                    $documents = CandidateDocument::withoutTenantScope()
+                        ->where('tenant_id', $locked->tenant_id)
+                        ->where('candidate_id', $locked->id)
+                        ->get();
+
+                    foreach ($documents as $doc) {
+                        if ($doc->storage_disk && $doc->storage_path) {
+                            $disk = Storage::disk($doc->storage_disk);
+                            try {
+                                $existedBefore = $disk->exists($doc->storage_path);
+                                $deleted = $existedBefore ? $disk->delete($doc->storage_path) : true;
+                                $stillExistsAfter = $existedBefore ? $disk->exists($doc->storage_path) : false;
+                            } catch (Throwable $storageError) {
+                                throw new RuntimeException(
+                                    'DSAR_STORAGE_DELETION_FAILED: Unable to erase candidate document from private storage ('.$storageError->getMessage().').',
+                                    500,
+                                    $storageError
+                                );
+                            }
+
+                            if (! $deleted || $stillExistsAfter) {
+                                throw new RuntimeException(
+                                    "DSAR_STORAGE_DELETION_FAILED: Required candidate document #{$doc->id} could not be deleted from storage disk '{$doc->storage_disk}'.",
+                                    500
+                                );
+                            }
+                        }
+                    }
+
+                    $parseJobs = ResumeParseJob::withoutGlobalScopes()
+                        ->where('tenant_id', $locked->tenant_id)
+                        ->where('candidate_id', $locked->id)
+                        ->get();
+                    $parseJobIds = $parseJobs->pluck('id')->map(fn ($id): int => (int) $id)->all();
+
+                    $applications = Application::withoutTenantScope()
+                        ->where('tenant_id', $locked->tenant_id)
+                        ->where('candidate_id', $locked->id)
+                        ->get();
+                    $applicationIds = $applications->pluck('id')->map(fn ($id): int => (int) $id)->all();
+
+                    $explicitAiTaskRunIds = array_values(array_unique(array_filter(array_merge(
+                        $parseJobs->pluck('ai_task_run_id')->filter()->map(fn ($id): int => (int) $id)->all(),
+                        $applications->map(function (Application $app): ?int {
+                            $runId = is_array($app->ai_match_data) ? ($app->ai_match_data['ai_task_run_id'] ?? null) : null;
+
+                            return is_numeric($runId) ? (int) $runId : null;
+                        })->filter()->all()
+                    ))));
+
+                    $linkedTaskRuns = AiTaskRun::withoutGlobalScopes()
+                        ->where('tenant_id', $locked->tenant_id)
+                        ->where(function ($query) use ($explicitAiTaskRunIds, $parseJobIds, $applicationIds, $locked): void {
+                            $query->where(function ($q) use ($locked): void {
+                                $q->where('entity_type', 'Candidate')
+                                    ->where('entity_id', (int) $locked->id);
+                            });
+
+                            if (! empty($explicitAiTaskRunIds)) {
+                                $query->orWhereIn('id', $explicitAiTaskRunIds);
+                            }
+
+                            if (! empty($parseJobIds)) {
+                                $query->orWhere(function ($q) use ($parseJobIds): void {
+                                    $q->where('entity_type', 'ResumeParseJob')
+                                        ->whereIn('entity_id', $parseJobIds);
+                                });
+                            }
+
+                            if (! empty($applicationIds)) {
+                                $query->orWhere(function ($q) use ($applicationIds): void {
+                                    $q->where('entity_type', 'Application')
+                                        ->whereIn('entity_id', $applicationIds);
+                                });
+                            }
+                        })
+                        ->get()
+                        ->keyBy('id');
+
+                    if (
+                        ($originalEmail !== '' && ! str_ends_with($originalEmail, '@redacted.invalid'))
+                        || ($originalFullName !== '' && strtolower($originalFullName) !== 'anonymized candidate')
+                    ) {
+                        $unlinkedCandidateRuns = AiTaskRun::withoutGlobalScopes()
+                            ->where('tenant_id', $locked->tenant_id)
+                            ->where(function ($q): void {
+                                $q->whereNull('entity_type')
+                                    ->orWhere('entity_type', 'PublicResumePrefill');
+                            })
+                            ->get();
+
+                        foreach ($unlinkedCandidateRuns as $candidateRun) {
+                            $serializedOutput = strtolower((string) json_encode($candidateRun->structured_output ?? []));
+                            $summaryText = strtolower((string) ($candidateRun->redacted_input_summary ?? ''));
+                            $matchesEmail = $originalEmail !== ''
+                                && ! str_ends_with($originalEmail, '@redacted.invalid')
+                                && (str_contains($serializedOutput, $originalEmail) || str_contains($summaryText, $originalEmail));
+                            $matchesName = $originalFullName !== ''
+                                && strtolower($originalFullName) !== 'anonymized candidate'
+                                && (str_contains($serializedOutput, strtolower($originalFullName)) || str_contains($summaryText, strtolower($originalFullName)));
+
+                            if ($matchesEmail || $matchesName) {
+                                $linkedTaskRuns->put($candidateRun->id, $candidateRun);
+                            }
+                        }
+                    }
+
+                    foreach ($linkedTaskRuns as $taskRun) {
+                        $taskRun->update([
+                            'input_hash' => hash('sha256', '[REDACTED_DSAR_ANONYMIZED:'.$taskRun->id.']'),
+                            'redacted_input_summary' => '[REDACTED_DSAR_ANONYMIZED]',
+                            'structured_output' => [
+                                'redacted' => true,
+                                'reason' => 'DSAR_ANONYMIZED',
+                                'task_type' => $taskRun->task_type,
+                            ],
+                        ]);
+                        $scrubbedAiTaskRunsCount++;
+                    }
+
+                    $scrubbedParseJobsCount = ResumeParseJob::withoutGlobalScopes()
+                        ->where('tenant_id', $locked->tenant_id)
+                        ->where('candidate_id', $locked->id)
+                        ->update([
+                            'candidate_document_id' => null,
+                            'status' => ResumeParseJob::STATUS_FAILED,
+                            'parsed_data' => null,
+                            'corrected_data' => null,
+                            'validation_errors' => [],
+                            'missing_fields' => [],
+                            'security_flags' => [],
+                            'extracted_text_length' => 0,
+                            'error_code' => 'DSAR_ANONYMIZED',
+                            'error_message' => 'Candidate data anonymized per DSAR request.',
+                            'next_retry_at' => null,
+                            'completed_at' => now(),
+                        ]);
+
+                    $deletedDocumentsCount = CandidateDocument::withoutTenantScope()
+                        ->where('tenant_id', $locked->tenant_id)
+                        ->where('candidate_id', $locked->id)
+                        ->delete();
+
+                    if (! empty($applicationIds)) {
+                        Application::withoutTenantScope()
+                            ->where('tenant_id', $locked->tenant_id)
+                            ->whereIn('id', $applicationIds)
+                            ->update([
+                                'cover_note' => null,
+                                'answers' => null,
+                                'screening_notes' => null,
+                                'ai_match_data' => null,
+                                'rejection_reason' => null,
+                            ]);
+
+                        ApplicationStageEvent::withoutTenantScope()
+                            ->where('tenant_id', $locked->tenant_id)
+                            ->whereIn('application_id', $applicationIds)
+                            ->update([
+                                'notes' => '[REDACTED_DSAR_ANONYMIZED]',
+                                'metadata' => null,
+                            ]);
+
+                        ScreeningEvaluation::withoutGlobalScopes()
+                            ->where('tenant_id', $locked->tenant_id)
+                            ->whereIn('application_id', $applicationIds)
+                            ->update([
+                                'criteria_breakdown' => ['redacted' => true, 'reason' => 'DSAR_ANONYMIZED'],
+                                'missing_evidence_flags' => [],
+                                'notes' => null,
+                            ]);
+
+                        Assessment::withoutGlobalScopes()
+                            ->where('tenant_id', $locked->tenant_id)
+                            ->whereIn('application_id', $applicationIds)
+                            ->update([
+                                'accommodations_notes' => null,
+                            ]);
+
+                        Interview::withoutGlobalScopes()
+                            ->where('tenant_id', $locked->tenant_id)
+                            ->whereIn('application_id', $applicationIds)
+                            ->update([
+                                'location_or_link' => null,
+                                'interview_pack_notes' => null,
+                            ]);
+
+                        InterviewScorecard::withoutGlobalScopes()
+                            ->where('tenant_id', $locked->tenant_id)
+                            ->whereIn('application_id', $applicationIds)
+                            ->update([
+                                'strengths_evidence' => '[REDACTED_DSAR_ANONYMIZED]',
+                                'concerns_evidence' => null,
+                            ]);
+
+                        HiringDecision::withoutGlobalScopes()
+                            ->where('tenant_id', $locked->tenant_id)
+                            ->whereIn('application_id', $applicationIds)
+                            ->update([
+                                'rationale' => '[REDACTED_DSAR_ANONYMIZED]',
+                            ]);
+
+                        $nonDispatchedCaseIds = HrValidationCase::withoutGlobalScopes()
+                            ->where('tenant_id', $locked->tenant_id)
+                            ->whereIn('application_id', $applicationIds)
+                            ->where('status', '!=', 'handed_over')
+                            ->pluck('id')
+                            ->all();
+
+                        if (! empty($nonDispatchedCaseIds)) {
+                            $pendingApprovals = HrHandoverApproval::withoutGlobalScopes()
+                                ->where('tenant_id', $locked->tenant_id)
+                                ->whereIn('hr_validation_case_id', $nonDispatchedCaseIds)
+                                ->get();
+
+                            foreach ($pendingApprovals as $approval) {
+                                $snapshot = is_array($approval->approved_payload_snapshot) ? $approval->approved_payload_snapshot : [];
+                                $snapshot['candidate_email'] = 'anonymized-'.$locked->id.'@redacted.invalid';
+                                $snapshot['candidate_first_name'] = 'Anonymized';
+                                $snapshot['candidate_last_name'] = 'Candidate';
+                                $approval->update([
+                                    'decision' => 'invalidated',
+                                    'comment' => 'Invalidated and scrubbed per candidate DSAR anonymization.',
+                                    'approved_payload_snapshot' => $snapshot,
+                                ]);
+                            }
+
+                            $pendingHandovers = HrHandover::withoutGlobalScopes()
+                                ->where('tenant_id', $locked->tenant_id)
+                                ->whereIn('hr_validation_case_id', $nonDispatchedCaseIds)
+                                ->whereNotIn('status', ['succeeded', 'reconciled'])
+                                ->get();
+
+                            foreach ($pendingHandovers as $pendingHandover) {
+                                $snapshot = is_array($pendingHandover->payload_snapshot) ? $pendingHandover->payload_snapshot : [];
+                                $snapshot['candidate_email'] = 'anonymized-'.$locked->id.'@redacted.invalid';
+                                $snapshot['candidate_first_name'] = 'Anonymized';
+                                $snapshot['candidate_last_name'] = 'Candidate';
+                                $pendingHandover->update([
+                                    'status' => 'cancelled',
+                                    'error_code' => 'DSAR_ANONYMIZED',
+                                    'error_detail' => 'Cancelled and scrubbed per candidate DSAR anonymization.',
+                                    'payload_snapshot' => $snapshot,
+                                ]);
+
+                                TransactionalOutboxEvent::withoutGlobalScopes()
+                                    ->where('tenant_id', $locked->tenant_id)
+                                    ->where('aggregate_type', 'hr_handover')
+                                    ->where('aggregate_id', $pendingHandover->id)
+                                    ->where('status', '!=', 'dispatched')
+                                    ->update([
+                                        'status' => 'cancelled',
+                                        'payload' => $snapshot,
+                                        'last_error' => 'DSAR_ANONYMIZED',
+                                    ]);
+                            }
+                        }
+                    }
+
+                    $locked->update([
+                        'first_name' => 'Anonymized',
+                        'last_name' => 'Candidate',
+                        'email' => 'anonymized-'.$locked->id.'@redacted.invalid',
+                        'phone' => null,
+                        'location_city' => null,
+                        'current_title' => null,
+                        'professional_summary' => null,
+                        'parsed_resume_data' => null,
+                        'skills' => [],
+                        'work_experience' => [],
+                        'education' => [],
+                        'certifications' => [],
+                        'projects' => [],
+                        'languages' => [],
+                        'professional_links' => [],
+                        'talent_pool_tag' => null,
+                        'resume_parse_status' => ResumeParseJob::STATUS_FAILED,
+                        'consent_given' => false,
+                        'consent_given_at' => null,
+                        'dsar_status' => 'ANONYMIZED',
+                    ]);
+                } else {
+                    $locked->update([
+                        'consent_given' => $consentGiven,
+                        'consent_given_at' => $consentGiven ? ($locked->consent_given_at ?? now()) : null,
+                        'dsar_status' => $dsarStatus,
+                    ]);
+
+                    if (! $consentGiven || in_array($dsarStatus, ['RESTRICTION_REQUESTED', 'DELETION_REQUESTED'], true)) {
+                        ResumeParseJob::withoutGlobalScopes()
+                            ->where('tenant_id', $locked->tenant_id)
+                            ->where('candidate_id', $locked->id)
+                            ->whereIn('status', [
+                                ResumeParseJob::STATUS_UPLOADED,
+                                ResumeParseJob::STATUS_QUEUED,
+                                ResumeParseJob::STATUS_RETRY_SCHEDULED,
+                            ])
+                            ->update([
+                                'status' => ResumeParseJob::STATUS_FAILED,
+                                'error_code' => 'CONSENT_OR_DSAR_BLOCKED',
+                                'error_message' => 'Execution blocked: candidate privacy consent withdrawn or DSAR restriction/deletion active.',
+                                'next_retry_at' => null,
+                                'completed_at' => now(),
+                            ]);
                     }
                 }
 
-                ResumeParseJob::withoutGlobalScopes()
-                    ->where('tenant_id', $locked->tenant_id)
-                    ->where('candidate_id', $locked->id)
-                    ->update([
-                        'parsed_data' => null,
-                        'corrected_data' => null,
-                        'error_message' => 'Candidate data anonymized per DSAR request.',
-                    ]);
+                $this->audit->record(
+                    module: 'candidates',
+                    action: 'candidate_consent_dsar_updated',
+                    outcome: 'SUCCESS',
+                    entityType: 'Candidate',
+                    entityId: (string) $locked->id,
+                    metadata: [
+                        'candidate_code' => $locked->candidate_code,
+                        'consent_given' => $locked->consent_given,
+                        'dsar_status' => $locked->dsar_status,
+                        'anonymized' => $dsarStatus === 'ANONYMIZED',
+                        'scrubbed_parse_jobs_count' => $scrubbedParseJobsCount,
+                        'scrubbed_ai_task_runs_count' => $scrubbedAiTaskRunsCount,
+                        'deleted_documents_count' => $deletedDocumentsCount,
+                    ],
+                    tenantId: (int) $locked->tenant_id,
+                    actorUserId: (int) $actor->id,
+                );
 
-                CandidateDocument::withoutTenantScope()
-                    ->where('tenant_id', $locked->tenant_id)
-                    ->where('candidate_id', $locked->id)
-                    ->delete();
-
-                $locked->update([
-                    'first_name' => 'Anonymized',
-                    'last_name' => 'Candidate',
-                    'email' => 'anonymized-'.$locked->id.'@redacted.invalid',
-                    'phone' => null,
-                    'location_city' => null,
-                    'current_title' => null,
-                    'professional_summary' => null,
-                    'parsed_resume_data' => null,
-                    'skills' => [],
-                    'work_experience' => [],
-                    'education' => [],
-                    'certifications' => [],
-                    'projects' => [],
-                    'languages' => [],
-                    'professional_links' => [],
-                    'consent_given' => false,
-                    'consent_given_at' => null,
-                    'dsar_status' => 'ANONYMIZED',
-                ]);
-            } else {
-                $locked->update([
-                    'consent_given' => $consentGiven,
-                    'consent_given_at' => $consentGiven ? ($locked->consent_given_at ?? now()) : null,
-                    'dsar_status' => $dsarStatus,
-                ]);
+                return $locked->fresh();
+            });
+        } catch (RuntimeException $e) {
+            if (str_starts_with($e->getMessage(), 'DSAR_STORAGE_DELETION_FAILED')) {
+                $this->audit->record(
+                    module: 'candidates',
+                    action: 'candidate_dsar_anonymization_storage_failed',
+                    outcome: 'FAILED',
+                    errorCode: 'DSAR_STORAGE_DELETION_FAILED',
+                    entityType: 'Candidate',
+                    entityId: (string) $candidate->id,
+                    metadata: [
+                        'candidate_code' => $candidate->candidate_code,
+                        'dsar_status_attempted' => 'ANONYMIZED',
+                    ],
+                    tenantId: (int) $candidate->tenant_id,
+                    actorUserId: (int) $actor->id,
+                );
             }
 
-            $this->audit->record(
-                module: 'candidates',
-                action: 'candidate_consent_dsar_updated',
-                outcome: 'SUCCESS',
-                entityType: 'Candidate',
-                entityId: (string) $locked->id,
-                metadata: [
-                    'candidate_code' => $locked->candidate_code,
-                    'consent_given' => $locked->consent_given,
-                    'dsar_status' => $locked->dsar_status,
-                    'anonymized' => $dsarStatus === 'ANONYMIZED',
-                ],
-                tenantId: (int) $locked->tenant_id,
-                actorUserId: (int) $actor->id,
-            );
-
-            return $locked->fresh();
-        });
+            throw $e;
+        }
     }
 }

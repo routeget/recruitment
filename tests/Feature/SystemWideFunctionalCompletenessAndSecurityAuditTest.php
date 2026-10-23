@@ -14,7 +14,6 @@ use App\Models\JobPosting;
 use App\Models\LegalEntity;
 use App\Models\Offer;
 use App\Models\Permission;
-use App\Models\ResumeParseJob;
 use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\TenantMembership;
@@ -229,7 +228,7 @@ class SystemWideFunctionalCompletenessAndSecurityAuditTest extends TestCase
         }
         $this->assertTrue($consentBlocked, 'Expected ValidationException when parsing resume for candidate who withdrew consent.');
 
-        // 2. Execute DSAR Anonymization -> PII is scrubbed, private files deleted, and parse jobs removed
+        // 2. Execute DSAR Anonymization -> PII is scrubbed, private files deleted, and parse jobs & AI task runs scrubbed
         $anonymized = $service->updateCandidateConsentAndDsar($updated, [
             'consent_given' => false,
             'dsar_status' => 'ANONYMIZED',
@@ -242,7 +241,19 @@ class SystemWideFunctionalCompletenessAndSecurityAuditTest extends TestCase
         $this->assertSame([], $anonymized->skills);
         $this->assertSame('ANONYMIZED', $anonymized->dsar_status);
         $this->assertSame(0, CandidateDocument::withoutGlobalScopes()->where('candidate_id', $candidate->id)->count());
-        $this->assertSame(0, ResumeParseJob::withoutGlobalScopes()->where('candidate_id', $candidate->id)->count());
+
+        $scrubbedParseJob = $parseJob->fresh();
+        $this->assertNotNull($scrubbedParseJob);
+        $this->assertNull($scrubbedParseJob->candidate_document_id);
+        $this->assertNull($scrubbedParseJob->parsed_data);
+        $this->assertNull($scrubbedParseJob->corrected_data);
+        $this->assertSame('DSAR_ANONYMIZED', $scrubbedParseJob->error_code);
+
+        $scrubbedTaskRun = $scrubbedParseJob->aiTaskRun?->fresh();
+        $this->assertNotNull($scrubbedTaskRun);
+        $this->assertSame('[REDACTED_DSAR_ANONYMIZED]', $scrubbedTaskRun->redacted_input_summary);
+        $this->assertTrue((bool) ($scrubbedTaskRun->structured_output['redacted'] ?? false));
+        $this->assertStringNotContainsString('Marcus', (string) json_encode($scrubbedTaskRun->structured_output));
     }
 
     public function test_human_reviewed_resume_corrections_persist_email_country_and_survive_resume_reprocessing(): void

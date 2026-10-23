@@ -49,7 +49,11 @@ class ResumeParsingService
             ]);
         }
 
-        if (! $candidate->consent_given || in_array((string) $candidate->dsar_status, ['DELETION_REQUESTED', 'ANONYMIZED'], true)) {
+        $persistedCandidate = Candidate::withoutGlobalScopes()->find($candidate->id);
+        $effectiveConsent = (bool) $candidate->consent_given && ($persistedCandidate === null || (bool) $persistedCandidate->consent_given);
+        $effectiveDsar = (string) ($persistedCandidate?->dsar_status ?? $candidate->dsar_status ?? 'NONE');
+
+        if (! $effectiveConsent || in_array($effectiveDsar, ['RESTRICTION_REQUESTED', 'DELETION_REQUESTED', 'ANONYMIZED'], true) || in_array((string) $candidate->dsar_status, ['RESTRICTION_REQUESTED', 'DELETION_REQUESTED', 'ANONYMIZED'], true)) {
             throw ValidationException::withMessages([
                 'consent_given' => ['CONSENT_REQUIRED: Active candidate privacy consent is required and DSAR deletion must not be active before AI resume processing.'],
             ]);
@@ -118,9 +122,72 @@ class ResumeParsingService
         array $options = []
     ): ResumeParseJob {
         $candidate = Candidate::withoutGlobalScopes()->findOrFail($parseJob->candidate_id);
-        $document = CandidateDocument::withoutGlobalScopes()->findOrFail($parseJob->candidate_document_id);
 
-        if ((int) $parseJob->tenant_id !== (int) $candidate->tenant_id || (int) $parseJob->tenant_id !== (int) $document->tenant_id) {
+        if ((int) $parseJob->tenant_id !== (int) $candidate->tenant_id) {
+            throw new RuntimeException('TENANT_SCOPE_VIOLATION: Cross-tenant resume parse execution blocked.', 403);
+        }
+
+        if (! $candidate->consent_given || in_array((string) $candidate->dsar_status, ['RESTRICTION_REQUESTED', 'DELETION_REQUESTED', 'ANONYMIZED'], true)) {
+            $isAnonymized = (string) $candidate->dsar_status === 'ANONYMIZED';
+            $errorCode = $isAnonymized ? 'DSAR_ANONYMIZED' : 'CONSENT_OR_DSAR_BLOCKED';
+            $errorMessage = $isAnonymized
+                ? 'Candidate data anonymized per DSAR request.'
+                : 'Execution blocked: candidate privacy consent withdrawn or DSAR restriction/deletion active.';
+
+            $parseJob->update([
+                'candidate_document_id' => $isAnonymized ? null : $parseJob->candidate_document_id,
+                'status' => ResumeParseJob::STATUS_FAILED,
+                'parsed_data' => null,
+                'corrected_data' => $isAnonymized ? null : $parseJob->corrected_data,
+                'validation_errors' => [],
+                'missing_fields' => [],
+                'security_flags' => [],
+                'extracted_text_length' => $isAnonymized ? 0 : $parseJob->extracted_text_length,
+                'error_code' => $errorCode,
+                'error_message' => $errorMessage,
+                'next_retry_at' => null,
+                'completed_at' => now(),
+            ]);
+
+            $candidate->update(['resume_parse_status' => ResumeParseJob::STATUS_FAILED]);
+
+            $this->auditService->record(
+                module: 'resume_parsing',
+                action: 'resume.parse_blocked_by_privacy_state',
+                outcome: 'DENIED',
+                errorCode: $errorCode,
+                entityType: 'ResumeParseJob',
+                entityId: (string) $parseJob->id,
+                metadata: [
+                    'candidate_id' => $candidate->id,
+                    'consent_given' => (bool) $candidate->consent_given,
+                    'dsar_status' => (string) $candidate->dsar_status,
+                ],
+                tenantId: (int) $candidate->tenant_id,
+                actorUserId: $actor?->id,
+            );
+
+            return $parseJob->fresh();
+        }
+
+        $document = $parseJob->candidate_document_id
+            ? CandidateDocument::withoutGlobalScopes()->find($parseJob->candidate_document_id)
+            : null;
+
+        if ($document === null) {
+            $parseJob->update([
+                'status' => ResumeParseJob::STATUS_FAILED,
+                'error_code' => 'DOCUMENT_NOT_FOUND',
+                'error_message' => 'Source candidate document is no longer available.',
+                'next_retry_at' => null,
+                'completed_at' => now(),
+            ]);
+            $candidate->update(['resume_parse_status' => ResumeParseJob::STATUS_FAILED]);
+
+            return $parseJob->fresh();
+        }
+
+        if ((int) $parseJob->tenant_id !== (int) $document->tenant_id) {
             throw new RuntimeException('TENANT_SCOPE_VIOLATION: Cross-tenant resume parse execution blocked.', 403);
         }
 
@@ -301,9 +368,52 @@ class ResumeParsingService
             $finalStatus,
             $actor
         ): ResumeParseJob {
+            $lockedCandidate = Candidate::withoutGlobalScopes()->lockForUpdate()->findOrFail($candidate->id);
+
+            if (! $lockedCandidate->consent_given || in_array((string) $lockedCandidate->dsar_status, ['RESTRICTION_REQUESTED', 'DELETION_REQUESTED', 'ANONYMIZED'], true)) {
+                $isAnonymized = (string) $lockedCandidate->dsar_status === 'ANONYMIZED';
+                $errorCode = $isAnonymized ? 'DSAR_ANONYMIZED' : 'CONSENT_OR_DSAR_BLOCKED';
+                $errorMessage = $isAnonymized
+                    ? 'Candidate data anonymized per DSAR request.'
+                    : 'Execution blocked: candidate privacy consent withdrawn or DSAR restriction/deletion active.';
+
+                $taskRun->update([
+                    'input_hash' => hash('sha256', '[REDACTED_DSAR_ANONYMIZED:'.$taskRun->id.']'),
+                    'redacted_input_summary' => '[REDACTED_DSAR_ANONYMIZED]',
+                    'structured_output' => [
+                        'redacted' => true,
+                        'reason' => $errorCode,
+                        'task_type' => $taskRun->task_type,
+                    ],
+                ]);
+
+                $parseJob->update([
+                    'ai_task_run_id' => $taskRun->id,
+                    'provider_key' => $taskRun->provider_key,
+                    'model_name' => $taskRun->model_name,
+                    'execution_mode' => $taskRun->execution_mode,
+                    'candidate_document_id' => $isAnonymized ? null : $parseJob->candidate_document_id,
+                    'status' => ResumeParseJob::STATUS_FAILED,
+                    'parsed_data' => null,
+                    'corrected_data' => $isAnonymized ? null : $parseJob->corrected_data,
+                    'validation_errors' => [],
+                    'missing_fields' => [],
+                    'security_flags' => [],
+                    'extracted_text_length' => 0,
+                    'error_code' => $errorCode,
+                    'error_message' => $errorMessage,
+                    'next_retry_at' => null,
+                    'completed_at' => now(),
+                ]);
+
+                $lockedCandidate->update(['resume_parse_status' => ResumeParseJob::STATUS_FAILED]);
+
+                return $parseJob->fresh();
+            }
+
             $priorReviewedJob = ResumeParseJob::withoutGlobalScopes()
-                ->where('tenant_id', $candidate->tenant_id)
-                ->where('candidate_id', $candidate->id)
+                ->where('tenant_id', $lockedCandidate->tenant_id)
+                ->where('candidate_id', $lockedCandidate->id)
                 ->where('id', '!=', $parseJob->id)
                 ->whereNotNull('corrected_data')
                 ->latest('id')
@@ -312,8 +422,8 @@ class ResumeParsingService
             $preservedCorrections = ! empty($parseJob->corrected_data)
                 ? $parseJob->corrected_data
                 : ($priorReviewedJob?->corrected_data ?? (
-                    is_array($candidate->parsed_resume_data) && ! empty($candidate->parsed_resume_data['human_reviewed'])
-                        ? $candidate->parsed_resume_data
+                    is_array($lockedCandidate->parsed_resume_data) && ! empty($lockedCandidate->parsed_resume_data['human_reviewed'])
+                        ? $lockedCandidate->parsed_resume_data
                         : null
                 ));
 
@@ -341,7 +451,7 @@ class ResumeParsingService
                 'completed_at' => now(),
             ]);
 
-            $this->syncParsedDataToCandidateProfile($candidate, $structured, $finalStatus, $preservedCorrections);
+            $this->syncParsedDataToCandidateProfile($lockedCandidate, $structured, $finalStatus, $preservedCorrections);
 
             $this->auditService->record(
                 module: 'resume_parsing',
@@ -350,14 +460,14 @@ class ResumeParsingService
                 entityType: 'ResumeParseJob',
                 entityId: (string) $parseJob->id,
                 metadata: [
-                    'candidate_id' => $candidate->id,
+                    'candidate_id' => $lockedCandidate->id,
                     'status' => $finalStatus,
                     'provider_key' => $taskRun->provider_key,
                     'model_name' => $taskRun->model_name,
                     'schema_version' => ResumeParseJob::SCHEMA_VERSION,
                     'prompt_injection_detected' => $injection['detected'],
                 ],
-                tenantId: (int) $candidate->tenant_id,
+                tenantId: (int) $lockedCandidate->tenant_id,
                 actorUserId: $actor?->id,
             );
 
@@ -593,7 +703,7 @@ class ResumeParsingService
             throw new RuntimeException('TENANT_SCOPE_VIOLATION: Cross-tenant review blocked.', 403);
         }
 
-        if (! $candidate->consent_given || in_array((string) $candidate->dsar_status, ['DELETION_REQUESTED', 'ANONYMIZED'], true)) {
+        if (! $candidate->consent_given || in_array((string) $candidate->dsar_status, ['RESTRICTION_REQUESTED', 'DELETION_REQUESTED', 'ANONYMIZED'], true)) {
             throw ValidationException::withMessages([
                 'consent_given' => ['CONSENT_REQUIRED: Candidate privacy consent must be active before saving reviewed profile data.'],
             ]);
@@ -743,14 +853,14 @@ class ResumeParsingService
         $providerKey = $resolvedProviderKey;
 
         $application->loadMissing(['candidate.latestResumeParseJob', 'jobPosting']);
-        $candidate = $application->candidate;
+        $candidate = Candidate::withoutGlobalScopes()->find($application->candidate_id) ?? $application->candidate;
         $job = $application->jobPosting;
 
         if ($candidate === null || $job === null || (int) $application->tenant_id !== (int) $candidate->tenant_id || (int) $application->tenant_id !== (int) $job->tenant_id) {
             throw new RuntimeException('TENANT_SCOPE_VIOLATION: Application, candidate, and job posting must belong to the same tenant.', 403);
         }
 
-        if (! $candidate->consent_given || in_array((string) $candidate->dsar_status, ['DELETION_REQUESTED', 'ANONYMIZED'], true)) {
+        if (! $candidate->consent_given || in_array((string) $candidate->dsar_status, ['RESTRICTION_REQUESTED', 'DELETION_REQUESTED', 'ANONYMIZED'], true)) {
             throw ValidationException::withMessages([
                 'consent_given' => ['CONSENT_REQUIRED: Active candidate privacy consent is required before AI candidate-to-job matching.'],
             ]);
