@@ -550,4 +550,129 @@ class ResumeContentAnalyzer
 
         return [];
     }
+
+    /**
+     * Redact direct contact identifiers (emails, phone numbers, personal URLs, SSNs/IDs) from text before external AI transmission.
+     */
+    public function redactDirectContactIdentifiers(string $text): string
+    {
+        $redacted = (string) preg_replace('/\b(sk-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._-]{8,})\b/i', '[REDACTED_SECRET]', $text);
+        $redacted = (string) preg_replace('/\b\d{3}-\d{2}-\d{4}\b/', '[REDACTED_SSN]', $redacted);
+        $redacted = (string) preg_replace('/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/', '[REDACTED_EMAIL]', $redacted);
+        $redacted = (string) preg_replace('/https?:\/\/[^\s,)>"]+/i', '[REDACTED_URL]', $redacted);
+        $redacted = (string) preg_replace('/\b(?:www\.|linkedin\.com\/in\/|github\.com\/)[^\s,)>"]+/i', '[REDACTED_URL]', $redacted);
+        $redacted = (string) preg_replace('/(?:Phone|Tel|Mobile|Cell)\s*:\s*\+?\d[\d\s().\-]{6,20}\d/i', '[REDACTED_PHONE]', $redacted);
+        $redacted = (string) preg_replace('/(?<![A-Za-z0-9_])\+?\d{1,3}[\s.\-]?\(?\d{2,4}\)?[\s.\-]\d{3,4}[\s.\-]\d{3,4}\b/', '[REDACTED_PHONE]', $redacted);
+        $redacted = (string) preg_replace('/(?<![A-Za-z0-9_])\+\d{1,3}[\s.\-]?\d{4,6}[\s.\-]?\d{4,6}\b/', '[REDACTED_PHONE]', $redacted);
+        $redacted = (string) preg_replace('/\b(?:\+?1[\s.\-]?)?\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}\b/', '[REDACTED_PHONE]', $redacted);
+
+        return $redacted;
+    }
+
+    /**
+     * Build a minimized, contact-redacted resume representation for external AI providers.
+     * Direct contact identifiers (email, phone, personal URLs, government IDs, and raw contact header lines) are omitted/redacted.
+     *
+     * @param  array<string, mixed>|null  $localBaseline
+     */
+    public function buildMinimizedRedactedExternalResumePrompt(string $cleanText, ?array $localBaseline = null): string
+    {
+        $baseline = $localBaseline ?? $this->extractStructuredResume($cleanText);
+        $redactedBody = $this->redactDirectContactIdentifiers($cleanText);
+
+        $sections = [
+            '<minimized_candidate_qualifications>',
+            'Notice: Direct contact identifiers (email, phone, personal URLs, government IDs) have been redacted locally for privacy minimization.',
+        ];
+
+        if (! empty($baseline['current_title'])) {
+            $sections[] = 'Stated Role / Title: '.$this->redactDirectContactIdentifiers((string) $baseline['current_title']);
+        }
+        if (isset($baseline['years_experience']) && $baseline['years_experience'] !== null) {
+            $sections[] = 'Stated Years of Experience: '.(int) $baseline['years_experience'];
+        }
+        if (! empty($baseline['professional_summary'])) {
+            $sections[] = 'Professional Summary: '.$this->redactDirectContactIdentifiers((string) $baseline['professional_summary']);
+        }
+        if (! empty($baseline['skills']) && is_array($baseline['skills'])) {
+            $sections[] = 'Locally Identified Skills: '.implode(', ', array_map('strval', $baseline['skills']));
+        }
+        if (! empty($baseline['work_experience']) && is_array($baseline['work_experience'])) {
+            $expLines = [];
+            foreach ($baseline['work_experience'] as $exp) {
+                if (is_array($exp)) {
+                    $title = $this->redactDirectContactIdentifiers((string) ($exp['job_title'] ?? ''));
+                    $employer = $this->redactDirectContactIdentifiers((string) ($exp['employer'] ?? ''));
+                    $start = (string) ($exp['start_date'] ?? '?');
+                    $end = (string) ($exp['end_date'] ?? 'Present');
+                    $expLines[] = trim("{$title} at {$employer} ({$start} - {$end})");
+                }
+            }
+            if (! empty($expLines)) {
+                $sections[] = "Work Experience:\n- ".implode("\n- ", $expLines);
+            }
+        }
+        if (! empty($baseline['education']) && is_array($baseline['education'])) {
+            $eduLines = [];
+            foreach ($baseline['education'] as $edu) {
+                if (is_array($edu)) {
+                    $qual = $this->redactDirectContactIdentifiers((string) ($edu['qualification'] ?? ''));
+                    $field = $this->redactDirectContactIdentifiers((string) ($edu['field_of_study'] ?? ''));
+                    $inst = $this->redactDirectContactIdentifiers((string) ($edu['institution'] ?? ''));
+                    $year = (string) ($edu['graduation_year'] ?? '');
+                    $eduLines[] = trim("{$qual} {$field} - {$inst} {$year}");
+                }
+            }
+            if (! empty($eduLines)) {
+                $sections[] = "Education:\n- ".implode("\n- ", $eduLines);
+            }
+        }
+        if (! empty($baseline['certifications']) && is_array($baseline['certifications'])) {
+            $sections[] = 'Certifications: '.implode(', ', array_map('strval', $baseline['certifications']));
+        }
+        if (! empty($baseline['languages']) && is_array($baseline['languages'])) {
+            $sections[] = 'Languages: '.implode(', ', array_map('strval', $baseline['languages']));
+        }
+
+        // Include contact-redacted body lines that do not consist purely of redacted contact tokens
+        $filteredBodyLines = [];
+        foreach (preg_split('/\r\n|\r|\n/', $redactedBody) ?: [] as $line) {
+            $trimmed = trim($line);
+            if ($trimmed === '') {
+                continue;
+            }
+            $withoutTokens = trim((string) preg_replace('/\[REDACTED_(?:EMAIL|PHONE|URL|SSN|SECRET)\]|[|,\-\s•]+/', '', $trimmed));
+            if ($withoutTokens !== '') {
+                $filteredBodyLines[] = $trimmed;
+            }
+        }
+
+        if (! empty($filteredBodyLines)) {
+            $sections[] = "Contact-Redacted Document Excerpt:\n".implode("\n", array_slice($filteredBodyLines, 0, 40));
+        }
+
+        $sections[] = '</minimized_candidate_qualifications>';
+
+        return implode("\n", $sections);
+    }
+
+    /**
+     * Sanitize structured resume data before passing it to candidate matching so direct contact identifiers are excluded.
+     *
+     * @param  array<string, mixed>  $resumeData
+     * @return array<string, mixed>
+     */
+    public function sanitizeResumeDataForExternalMatch(array $resumeData): array
+    {
+        return [
+            'current_title' => isset($resumeData['current_title']) ? $this->redactDirectContactIdentifiers((string) $resumeData['current_title']) : null,
+            'years_experience' => $resumeData['years_experience'] ?? ($resumeData['total_years_experience'] ?? null),
+            'skills' => is_array($resumeData['skills'] ?? null) ? array_values($resumeData['skills']) : [],
+            'work_experience' => is_array($resumeData['work_experience'] ?? null) ? array_values($resumeData['work_experience']) : [],
+            'education' => is_array($resumeData['education'] ?? null) ? array_values($resumeData['education']) : [],
+            'certifications' => is_array($resumeData['certifications'] ?? null) ? array_values($resumeData['certifications']) : [],
+            'languages' => is_array($resumeData['languages'] ?? null) ? array_values($resumeData['languages']) : [],
+            'ambiguous_fields' => is_array($resumeData['ambiguous_fields'] ?? null) ? array_values($resumeData['ambiguous_fields']) : [],
+        ];
+    }
 }

@@ -286,8 +286,9 @@ class ResumeParsingService
             );
         }
 
-        // Pre-extract non-secret contact details from clean text before PII redaction masks email in external prompts
+        // Pre-extract non-secret contact details locally before PII redaction & minimization removes them from external prompts
         $localBaseline = $this->contentAnalyzer->extractStructuredResume($injection['clean_text']);
+        $minimizedExternalInput = $this->contentAnalyzer->buildMinimizedRedactedExternalResumePrompt($injection['clean_text'], $localBaseline);
         $isolatedPromptInput = "<untrusted_resume_document>\n".$injection['clean_text']."\n</untrusted_resume_document>";
 
         try {
@@ -300,12 +301,14 @@ class ResumeParsingService
                 options: array_merge($options, [
                     'entity_type' => 'ResumeParseJob',
                     'entity_id' => $parseJob->id,
+                    'minimized_external_input' => $minimizedExternalInput,
+                    'local_baseline' => $localBaseline,
                 ])
             );
         } catch (Throwable $e) {
             $parts = explode(':', $e->getMessage(), 2);
             $errorCode = trim($parts[0]) ?: 'AI_PROVIDER_ERROR';
-            $errorMessage = trim($parts[1] ?? $e->getMessage());
+            $errorMessage = $this->contentAnalyzer->redactDirectContactIdentifiers(trim($parts[1] ?? $e->getMessage()));
 
             $isRetryable = in_array($errorCode, ['PROVIDER_TIMEOUT', 'PROVIDER_UNAVAILABLE', 'PROVIDER_RATE_LIMITED'], true)
                 && $parseJob->attempt_count < $parseJob->max_attempts;
@@ -515,19 +518,23 @@ class ResumeParsingService
             ];
         }
 
-        // Restore unredacted email from local baseline if AI output had [REDACTED_EMAIL]
+        // Restore locally extracted contact details when external AI prompts redacted direct contact identifiers
         $contact = is_array($aiOutput['contact'] ?? null) ? $aiOutput['contact'] : [];
         if (($contact['email'] ?? null) === '[REDACTED_EMAIL]' || empty($contact['email'])) {
             $contact['email'] = $localBaseline['contact']['email'] ?? null;
         }
-        $contact['phone'] = $contact['phone'] ?? ($localBaseline['contact']['phone'] ?? null);
+        if (($contact['phone'] ?? null) === '[REDACTED_PHONE]' || empty($contact['phone'])) {
+            $contact['phone'] = $localBaseline['contact']['phone'] ?? null;
+        }
         $contact['location_city'] = $contact['location_city'] ?? ($localBaseline['contact']['location_city'] ?? null);
         $contact['country_code'] = $contact['country_code'] ?? ($localBaseline['contact']['country_code'] ?? null);
-        $contact['links'] = is_array($contact['links'] ?? null) ? $contact['links'] : ($localBaseline['contact']['links'] ?? []);
+        $rawLinks = is_array($contact['links'] ?? null) ? $contact['links'] : [];
+        $cleanLinks = array_values(array_filter($rawLinks, fn ($u): bool => is_string($u) && $u !== '' && $u !== '[REDACTED_URL]'));
+        $contact['links'] = ! empty($cleanLinks) ? $cleanLinks : ($localBaseline['contact']['links'] ?? []);
 
-        $fullName = isset($aiOutput['full_name']) && is_string($aiOutput['full_name']) && trim($aiOutput['full_name']) !== ''
+        $fullName = isset($aiOutput['full_name']) && is_string($aiOutput['full_name']) && trim($aiOutput['full_name']) !== '' && ! str_contains(strtoupper($aiOutput['full_name']), '[REDACTED')
             ? trim($aiOutput['full_name'])
-            : null;
+            : ($localBaseline['full_name'] ?? null);
         $firstName = $aiOutput['first_name'] ?? null;
         $lastName = $aiOutput['last_name'] ?? null;
         if ($fullName !== null && ($firstName === null || $lastName === null)) {
@@ -558,6 +565,8 @@ class ResumeParsingService
             'full_name' => $fullName,
             'first_name' => $firstName,
             'last_name' => $lastName,
+            'email' => $contact['email'] ?? null,
+            'phone' => $contact['phone'] ?? null,
             'contact' => $contact,
             'emails' => ! empty($contact['email']) ? [$contact['email']] : [],
             'phones' => ! empty($contact['phone']) ? [$contact['phone']] : [],
@@ -875,6 +884,8 @@ class ResumeParsingService
                 'work_experience' => $candidate->work_experience ?? [],
             ]);
 
+        $minimizedResumeData = $this->contentAnalyzer->sanitizeResumeDataForExternalMatch(is_array($resumeData) ? $resumeData : []);
+
         $jobRequirements = [
             'title' => $job->title,
             'experience_level' => $job->experience_level,
@@ -883,9 +894,9 @@ class ResumeParsingService
         ];
 
         $promptSummary = "Job Title: {$job->title}\nRequired Skills: ".implode(', ', (array) ($job->skills_required ?? []))."\n"
-            .'Candidate Title: '.($candidate->current_title ?? 'Not stated')."\n"
+            .'Candidate Title: '.$this->contentAnalyzer->redactDirectContactIdentifiers((string) ($candidate->current_title ?? 'Not stated'))."\n"
             .'Candidate Years Experience: '.($candidate->years_experience ?? 'Not stated')."\n"
-            .'Candidate Skills: '.implode(', ', (array) ($resumeData['skills'] ?? $candidate->skills ?? []));
+            .'Candidate Skills: '.implode(', ', (array) ($minimizedResumeData['skills'] ?? $candidate->skills ?? []));
 
         $taskRun = $this->aiGateway->executeTask(
             taskType: 'candidate.match',
@@ -894,7 +905,7 @@ class ResumeParsingService
             actor: $actor,
             tenantId: (int) $application->tenant_id,
             options: [
-                'resume_data' => $resumeData,
+                'resume_data' => $minimizedResumeData,
                 'job_requirements' => $jobRequirements,
                 'entity_type' => 'Application',
                 'entity_id' => $application->id,

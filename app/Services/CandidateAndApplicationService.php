@@ -511,8 +511,34 @@ class CandidateAndApplicationService
                 $scrubbedParseJobsCount = 0;
                 $scrubbedAiTaskRunsCount = 0;
                 $deletedDocumentsCount = 0;
+                $minimizedCompletedHandoversCount = 0;
 
                 if ($dsarStatus === 'ANONYMIZED') {
+                    $isUnderLegalHold = in_array(strtoupper((string) $locked->dsar_status), ['LEGAL_HOLD', 'DISPUTE_ACTIVE'], true)
+                        || in_array(strtolower((string) $locked->talent_pool_tag), ['legal_hold', 'active_dispute', 'statutory_hold'], true);
+
+                    if ($isUnderLegalHold && empty($data['clear_legal_hold'])) {
+                        $this->audit->record(
+                            module: 'candidates',
+                            action: 'candidate_dsar_anonymization_blocked_legal_hold',
+                            outcome: 'DENIED',
+                            errorCode: 'LEGAL_HOLD_ACTIVE',
+                            entityType: 'Candidate',
+                            entityId: (string) $locked->id,
+                            metadata: [
+                                'candidate_code' => $locked->candidate_code,
+                                'current_dsar_status' => $locked->dsar_status,
+                                'talent_pool_tag' => $locked->talent_pool_tag,
+                            ],
+                            tenantId: (int) $locked->tenant_id,
+                            actorUserId: (int) $actor->id,
+                        );
+
+                        throw ValidationException::withMessages([
+                            'dsar_status' => ['LEGAL_HOLD_ACTIVE: Candidate profile is subject to an active legal or statutory hold and cannot be erased until the hold is released.'],
+                        ]);
+                    }
+
                     $consentGiven = false;
                     $originalEmail = strtolower(trim((string) $locked->email));
                     $originalFullName = trim(((string) $locked->first_name).' '.((string) $locked->last_name));
@@ -719,6 +745,12 @@ class CandidateAndApplicationService
                                 'rationale' => '[REDACTED_DSAR_ANONYMIZED]',
                             ]);
 
+                        $allCaseIds = HrValidationCase::withoutGlobalScopes()
+                            ->where('tenant_id', $locked->tenant_id)
+                            ->whereIn('application_id', $applicationIds)
+                            ->pluck('id')
+                            ->all();
+
                         $nonDispatchedCaseIds = HrValidationCase::withoutGlobalScopes()
                             ->where('tenant_id', $locked->tenant_id)
                             ->whereIn('application_id', $applicationIds)
@@ -733,6 +765,19 @@ class CandidateAndApplicationService
                                 ->get();
 
                             foreach ($pendingApprovals as $approval) {
+                                $hasReconcilingHandover = HrHandover::withoutGlobalScopes()
+                                    ->where('tenant_id', $locked->tenant_id)
+                                    ->where('hr_validation_case_id', $approval->hr_validation_case_id)
+                                    ->where(function ($q): void {
+                                        $q->where('requires_reconciliation', true)
+                                            ->orWhereIn('status', ['reconciliation_pending', 'succeeded', 'reconciled', 'HANDOVER_COMPLETED', 'COMPLETED']);
+                                    })
+                                    ->exists();
+
+                                if ($hasReconcilingHandover) {
+                                    continue;
+                                }
+
                                 $snapshot = is_array($approval->approved_payload_snapshot) ? $approval->approved_payload_snapshot : [];
                                 $snapshot['candidate_email'] = 'anonymized-'.$locked->id.'@redacted.invalid';
                                 $snapshot['candidate_first_name'] = 'Anonymized';
@@ -747,7 +792,8 @@ class CandidateAndApplicationService
                             $pendingHandovers = HrHandover::withoutGlobalScopes()
                                 ->where('tenant_id', $locked->tenant_id)
                                 ->whereIn('hr_validation_case_id', $nonDispatchedCaseIds)
-                                ->whereNotIn('status', ['succeeded', 'reconciled'])
+                                ->whereNotIn('status', ['succeeded', 'reconciled', 'HANDOVER_COMPLETED', 'COMPLETED', 'reconciliation_pending'])
+                                ->where('requires_reconciliation', false)
                                 ->get();
 
                             foreach ($pendingHandovers as $pendingHandover) {
@@ -772,6 +818,21 @@ class CandidateAndApplicationService
                                         'payload' => $snapshot,
                                         'last_error' => 'DSAR_ANONYMIZED',
                                     ]);
+                            }
+                        }
+
+                        if (! empty($allCaseIds)) {
+                            $completedHandovers = HrHandover::withoutGlobalScopes()
+                                ->where('tenant_id', $locked->tenant_id)
+                                ->whereIn('hr_validation_case_id', $allCaseIds)
+                                ->whereIn('status', ['succeeded', 'reconciled', 'HANDOVER_COMPLETED', 'COMPLETED'])
+                                ->where('requires_reconciliation', false)
+                                ->get();
+
+                            foreach ($completedHandovers as $completedHandover) {
+                                if ($this->minimizeCompletedHandoverSnapshot($completedHandover, 'DSAR_ANONYMIZED')) {
+                                    $minimizedCompletedHandoversCount++;
+                                }
                             }
                         }
                     }
@@ -838,6 +899,7 @@ class CandidateAndApplicationService
                         'scrubbed_parse_jobs_count' => $scrubbedParseJobsCount,
                         'scrubbed_ai_task_runs_count' => $scrubbedAiTaskRunsCount,
                         'deleted_documents_count' => $deletedDocumentsCount,
+                        'minimized_completed_handovers_count' => $minimizedCompletedHandoversCount,
                     ],
                     tenantId: (int) $locked->tenant_id,
                     actorUserId: (int) $actor->id,
@@ -865,5 +927,124 @@ class CandidateAndApplicationService
 
             throw $e;
         }
+    }
+
+    /**
+     * Minimize excess direct contact identifiers in a completed, reconciled HR handover payload_snapshot
+     * while preserving statutory onboarding, legal entity, offer version, and external employee reconciliation fields.
+     */
+    public function minimizeCompletedHandoverSnapshot(HrHandover $handover, string $reason = 'DSAR_ANONYMIZED'): bool
+    {
+        if (
+            ! in_array($handover->status, ['succeeded', 'reconciled', 'HANDOVER_COMPLETED', 'COMPLETED'], true)
+            || (bool) $handover->requires_reconciliation
+        ) {
+            return false;
+        }
+
+        $snapshot = is_array($handover->payload_snapshot) ? $handover->payload_snapshot : [];
+        $contactKeys = [
+            'candidate_email',
+            'candidate_first_name',
+            'candidate_last_name',
+            'candidate_phone',
+            'email',
+            'first_name',
+            'last_name',
+            'phone',
+            'address',
+            'personal_email',
+            'mobile_phone',
+        ];
+
+        $hasContactKeys = false;
+        foreach ($contactKeys as $key) {
+            if (array_key_exists($key, $snapshot)) {
+                $hasContactKeys = true;
+                break;
+            }
+        }
+        if (! $hasContactKeys && isset($snapshot['candidate']) && is_array($snapshot['candidate'])) {
+            foreach ($contactKeys as $key) {
+                if (array_key_exists($key, $snapshot['candidate'])) {
+                    $hasContactKeys = true;
+                    break;
+                }
+            }
+        }
+
+        if (($snapshot['snapshot_minimized'] ?? false) === true && ! $hasContactKeys) {
+            return false;
+        }
+
+        $minimizedSnapshot = $this->minimizeHandoverPayloadArray($snapshot, $reason);
+        $handover->update([
+            'payload_snapshot' => $minimizedSnapshot,
+        ]);
+
+        if ($handover->approval_id) {
+            $approval = HrHandoverApproval::withoutGlobalScopes()
+                ->where('tenant_id', $handover->tenant_id)
+                ->find($handover->approval_id);
+
+            if ($approval !== null && is_array($approval->approved_payload_snapshot)) {
+                $approval->update([
+                    'approved_payload_snapshot' => $this->minimizeHandoverPayloadArray($approval->approved_payload_snapshot, $reason),
+                ]);
+            }
+        }
+
+        $outboxEvents = TransactionalOutboxEvent::withoutGlobalScopes()
+            ->where('tenant_id', $handover->tenant_id)
+            ->where('aggregate_type', 'hr_handover')
+            ->where('aggregate_id', $handover->id)
+            ->get();
+
+        foreach ($outboxEvents as $event) {
+            if (is_array($event->payload)) {
+                $event->update([
+                    'payload' => $this->minimizeHandoverPayloadArray($event->payload, $reason),
+                ]);
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $snapshot
+     * @return array<string, mixed>
+     */
+    public function minimizeHandoverPayloadArray(array $snapshot, string $reason = 'DSAR_ANONYMIZED'): array
+    {
+        $contactKeys = [
+            'candidate_email',
+            'candidate_first_name',
+            'candidate_last_name',
+            'candidate_phone',
+            'email',
+            'first_name',
+            'last_name',
+            'phone',
+            'address',
+            'personal_email',
+            'mobile_phone',
+        ];
+
+        foreach ($contactKeys as $key) {
+            unset($snapshot[$key]);
+        }
+
+        if (isset($snapshot['candidate']) && is_array($snapshot['candidate'])) {
+            foreach ($contactKeys as $key) {
+                unset($snapshot['candidate'][$key]);
+            }
+        }
+
+        $snapshot['snapshot_minimized'] = true;
+        $snapshot['minimization_reason'] = $snapshot['minimization_reason'] ?? $reason;
+        $snapshot['minimized_at'] = $snapshot['minimized_at'] ?? now()->toIso8601String();
+
+        return $snapshot;
     }
 }
