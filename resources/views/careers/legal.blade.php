@@ -31,13 +31,21 @@
                     <p class="text-secondary">
                         When you explore opportunities or submit an application through the Tringers Career Portal, your personal data is processed strictly for recruitment evaluation, interview coordination, and pre-onboarding compliance for the hiring organization associated with the position.
                     </p>
-                    <h2 class="h5 fw-bold text-dark mt-4">2. Private Document Storage &amp; Access Controls</h2>
+                    <h2 class="h5 fw-bold text-dark mt-4">2. Private Document Storage &amp; AI Processing Safeguards</h2>
                     <p class="text-secondary">
-                        Candidate resumes, CVs, and supporting documents are stored exclusively in encrypted private storage. They are never exposed on public URLs or shared across unrelated organizations.
+                        Candidate resumes, CVs, and supporting documents are stored exclusively in encrypted private storage and are never exposed on public URLs or shared across unrelated organizations. Candidate personal data is never used to train external AI models. Where an enterprise AI processor is explicitly authorized under a verified Data Processing Addendum (DPA) and Zero Data Retention (ZDR) / no-training commitment, direct contact identifiers (email addresses, phone numbers, URLs, and national identifiers) are redacted prior to structured skill and experience extraction.
                     </p>
-                    <h2 class="h5 fw-bold text-dark mt-4">3. Retention &amp; Consent Rights</h2>
+                    <h2 class="h5 fw-bold text-dark mt-4">3. Retention Criteria, DSAR Erasure &amp; Statutory Handover Minimization</h2>
                     <p class="text-secondary">
-                        Every application records explicit candidate consent and applies the hiring organization's configured retention period. You may request access, correction, or withdrawal of consent by contacting <a href="mailto:{{ $platformBranding['support_email'] ?? 'support@career.tringers.com' }}">{{ $platformBranding['support_email'] ?? 'support@career.tringers.com' }}</a>.
+                        Every application records explicit candidate consent and assigns a governed retention expiration timestamp (<code>retention_expires_at</code>) based on the hiring organization&rsquo;s retention policy (minimum 30 days after application closure). Upon a verified Data Subject Access/Erasure Request (DSAR) or retention expiration (absent an active legal or statutory hold):
+                    </p>
+                    <ul class="text-secondary small mb-3">
+                        <li><strong>Deleted or Anonymized Candidate Data:</strong> Direct contact identifiers (name, email, phone, location), private resume/CV files, extracted resume parse payloads, AI task execution outputs and summaries, screening answers, interview notes, evaluation scorecards, and hiring decision narratives are irreversibly deleted or scrubbed.</li>
+                        <li><strong>Minimized Statutory Onboarding &amp; Audit Records:</strong> Where an application resulted in a completed HR onboarding handover, direct contact identifiers (<code>candidate_email</code>, <code>candidate_first_name</code>, <code>candidate_last_name</code>, <code>candidate_phone</code>, <code>address</code>) are stripped from the handover snapshot while non-personal statutory reconciliation metadata (<code>external_employee_id</code>, <code>external_request_id</code>, <code>idempotency_key</code>, <code>legal_entity_code</code>, <code>offer_version_id</code>, <code>offer_snapshot_hash</code>, and completion timestamps) is retained for audit and employment-record reconciliation.</li>
+                        <li><strong>Legal Hold Exception:</strong> Records subject to an active legal dispute or statutory preservation hold (<code>LEGAL_HOLD</code>) are exempt from automated erasure or snapshot minimization until the hold is formally released.</li>
+                    </ul>
+                    <p class="text-secondary">
+                        You may request access, correction, restriction, or erasure/withdrawal of consent by contacting <a href="mailto:{{ $platformBranding['support_email'] ?? 'support@career.tringers.com' }}">{{ $platformBranding['support_email'] ?? 'support@career.tringers.com' }}</a>.
                     </p>
                 @elseif($pageSlug === 'terms-of-use')
                     <h2 class="h5 fw-bold text-dark mt-3">1. Career Portal Usage</h2>

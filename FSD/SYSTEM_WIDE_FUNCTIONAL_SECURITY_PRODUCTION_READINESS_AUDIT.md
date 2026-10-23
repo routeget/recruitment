@@ -154,3 +154,38 @@ All `10` required regression test scenarios pass (`10 tests, 166 assertions`):
   - `recruitment:enforce-privacy-retention` -> `Flagged 0 candidate profile(s) exceeding the 180-day retention window.`
   - Per-minute cron daemon execution verified in `/home/career/htdocs/career.tringers.com/storage/logs/scheduler.log`.
 
+---
+
+## 9. PA-02 Remediation & Privacy Hardening Evidence
+
+### 9.1 External AI Privacy & Zero-Data-Retention (ZDR) Gate (§2)
+
+- **`app/Models/AiProviderConfig.php`:** Implemented `CANDIDATE_PII_TASKS`, `EXTERNAL_PROVIDER_KEYS`, `isExternalProvider()`, and `evaluateCandidatePrivacyEligibility()` enforcing fail-closed validation of `settings.privacy_attestation` (`status = 'VERIFIED'`, `attestation_source`, `dpa_reference`, `zdr_or_retention_reference`, `verifier_identifier`, `verified_at`, `expires_at > now()`, `approved_tasks`, `approved_models`, `redaction_enabled = true`, and non-contradictory `provider_privacy_settings`).
+- **`app/Services/Ai/Adapters/OpenAiAdapter.php`:** Added `'store' => false` to OpenAI Chat Completions requests in both `validateConnection()` and `executeStructuredTask()`.
+- **`app/Services/Ai/ResumeContentAnalyzer.php` & `app/Services/AiGatewayService.php` & `app/Services/ResumeParsingService.php`:** Added `redactDirectContactIdentifiers()`, `buildMinimizedRedactedExternalResumePrompt()`, and `sanitizeResumeDataForExternalMatch()`. Blocked silent fallback to unattested external providers on `EXTERNAL_AI_*` privacy gate failures, ensured `AiTaskRun->redacted_input_summary` is always contact-redacted, and restored locally extracted contact fields into merged resume outputs.
+
+### 9.2 Supervised Queue Worker, Retry Budget & Scheduled Retention Hardening (§3)
+
+- **Supervised Queue Worker (`deploy/systemd/recruitment-queue-worker.service` & `/home/career/.config/systemd/user/recruitment-queue-worker.service`):** Installed and enabled user-level `systemd` unit with `Linger=yes`, `Restart=always`, `RestartSec=5`. Verified auto-restart within 5 seconds after `kill -9` (`restart counter is at 1`).
+- **`routes/console.php` & `app/Jobs/ProcessResumeParsingJob.php` & `app/Jobs/DeliverSignedWebhookJob.php`:**
+  - `recruitment:process-scheduled-parse-retries`: transitions exhausted jobs (`attempt_count >= max_attempts`) to `FAILED` (`MAX_RETRIES_EXHAUSTED`), cancels queued/retry-scheduled jobs for non-consented or DSAR-restricted/anonymized candidates (`CONSENT_OR_DSAR_BLOCKED` / `DSAR_ANONYMIZED`), and dispatches eligible retries.
+  - `recruitment:enforce-privacy-retention`: evaluates `retention_expires_at <= now()` (with fallback to `updated_at <= $cutoff`), excludes `LEGAL_HOLD` / `DISPUTE_ACTIVE` and `legal_hold` / `active_dispute` / `statutory_hold` candidates, and minimizes eligible completed `HrHandover` snapshots idempotently.
+  - `DeliverSignedWebhookJob`: implements `ShouldBeUnique` (`uniqueId()`) and terminal status guard (`DELIVERED`, `CANCELLED`).
+  - All scheduled commands append output to `storage/logs/scheduler.log`.
+
+### 9.3 Backup Currency, Isolated Recovery Rehearsal, Retention Policy & Secret Permissions (§4)
+
+- **Fresh Backup Created:** `/home/career/backups/databases/recruitment_pa02_20261023_095500.sql` (`185,475` bytes, `0600`, `sha256` prefix `ac65098c30028240...`, 58 tables, 14 migrations including `2026_10_23_000011_make_resume_parse_jobs_document_nullable_for_dsar_scrubbing`).
+- **Isolated MariaDB 12.3.3 Restoration Rehearsal:** Restored `recruitment_pa02_20261023_095500.sql` into an isolated `--skip-networking` MariaDB 12.3.3 instance in `/home/career/tmp/pa02_isolated_recovery_env`, verified `58` tables, `14` migrations, `resume_parse_jobs.candidate_document_id` `is_nullable = YES`, and row counts, then wiped the temporary directory.
+- **Secret & Backup Permissions:** Set `0700` on `/home/career/backups` and `/home/career/backups/databases`, and `0600` on `/home/career/htdocs/career.tringers.com/.env`, `/home/career/backups/.env.backup.*`, and all `/home/career/backups/databases/*.sql` files.
+- **Backup Retention Command (`recruitment:audit-backup-retention`):** Implemented dry-run-by-default 14-day retention audit that preserves the newest valid recovery backup and blocks `--prune-approved` when any `LEGAL_HOLD` is active.
+
+### 9.4 HR Handover Snapshot Minimization & Public Privacy Notice Alignment (§5)
+
+- **`app/Services/CandidateAndApplicationService.php`:** Added `LEGAL_HOLD` guard (`LEGAL_HOLD_ACTIVE`) and `minimizeCompletedHandoverSnapshot()` / `minimizeHandoverPayloadArray()` removing direct contact identifiers from completed HR handover snapshots while preserving statutory reconciliation metadata.
+- **`resources/views/careers/legal.blade.php` (`/legal/privacy-policy`):** Disclosed deleted/anonymized candidate data categories, minimized statutory HR handover retention, `retention_expires_at` criteria, `LEGAL_HOLD` exceptions, and external AI privacy safeguards.
+
+### 9.5 PA-02 Automated Regression Suite (`tests/Feature/PostReleaseAssurancePa02Test.php`)
+
+- **Full Test Suite Result:** `87 tests, 1688 assertions — 100% PASS` (including `6` comprehensive PA-02 feature test suites in `PostReleaseAssurancePa02Test.php` with `74` assertions).
+

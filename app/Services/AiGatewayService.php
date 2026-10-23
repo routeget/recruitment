@@ -127,16 +127,36 @@ class AiGatewayService
      */
     private array $adapters = [];
 
+    private readonly ResumeContentAnalyzer $contentAnalyzer;
+
     public function __construct(
         private readonly AuditService $auditService,
         private readonly TenantContextService $tenantContext,
         private readonly ?PlatformConfigService $platformConfig = null,
     ) {
-        $analyzer = new ResumeContentAnalyzer;
+        $this->contentAnalyzer = new ResumeContentAnalyzer;
         $this->registerAdapter(new AnthropicClaudeAdapter);
         $this->registerAdapter(new GoogleGeminiAdapter);
         $this->registerAdapter(new OpenAiAdapter);
-        $this->registerAdapter(new DeterministicStructuredAdapter($analyzer));
+        $this->registerAdapter(new DeterministicStructuredAdapter($this->contentAnalyzer));
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function isCandidatePiiTask(string $taskType, string $canonicalTask, array $options = []): bool
+    {
+        if (
+            in_array($taskType, AiProviderConfig::CANDIDATE_PII_TASKS, true)
+            || in_array($canonicalTask, AiProviderConfig::CANDIDATE_PII_TASKS, true)
+            || ($options['candidate_pii_processing'] ?? false) === true
+        ) {
+            return true;
+        }
+
+        $entityType = isset($options['entity_type']) ? (string) $options['entity_type'] : '';
+
+        return in_array($entityType, ['Candidate', 'Application', 'ResumeParseJob', 'PublicResumePrefill'], true);
     }
 
     public function registerAdapter(AiProviderAdapterInterface $adapter): void
@@ -532,10 +552,11 @@ class AiGatewayService
         }
 
         $mustRedact = (bool) $providerConfig->redaction_enabled || $this->config()->getBool('ai.mandatory_pii_redaction');
-        $preserveCandidateContact = (bool) ($options['preserve_candidate_contact'] ?? false);
+        $preserveCandidateContact = (bool) ($options['preserve_candidate_contact'] ?? false) && ! $providerConfig->isExternalProvider();
         $redactedInput = $mustRedact
             ? $this->redactPiiAndSecrets($rawInputText, ! $preserveCandidateContact)
             : $rawInputText;
+        $strictRedactedSummary = $this->redactPiiAndSecrets($rawInputText, true);
 
         $promptVersion = AiPromptVersion::withoutGlobalScopes()
             ->where('tenant_id', $tenantId)
@@ -562,17 +583,21 @@ class AiGatewayService
             $execResult = $this->invokeAdapterOrLocalAnalyzer(
                 $activeProviderConfig,
                 $taskType,
+                $canonicalTask,
                 $systemPrompt,
                 $redactedInput,
                 $requiredKeys,
-                $executionOptions
+                $executionOptions,
+                $actor
             );
         } catch (RuntimeException $primaryError) {
+            $isPrivacyGateRejection = str_starts_with($primaryError->getMessage(), 'EXTERNAL_AI_');
             $fallbackKey = (string) ($options['fallback_provider_key']
                 ?? ($providerKey === 'auto' ? $taskRoute?->fallback_provider_key : $providerConfig->fallback_provider_key)
                 ?? '');
 
-            $allowFallback = ($options['allow_fallback'] ?? true) === true
+            $allowFallback = ! $isPrivacyGateRejection
+                && ($options['allow_fallback'] ?? true) === true
                 && $fallbackKey !== ''
                 && $fallbackKey !== $providerConfig->provider_key;
 
@@ -606,27 +631,36 @@ class AiGatewayService
                         actorUserId: $actor ? (int) $actor->id : null,
                     );
 
-                    $execResult = $this->invokeAdapterOrLocalAnalyzer(
-                        $fallbackConfig,
-                        $taskType,
-                        $systemPrompt,
-                        $redactedInput,
-                        $requiredKeys,
-                        $fallbackOptions
-                    );
+                    try {
+                        $execResult = $this->invokeAdapterOrLocalAnalyzer(
+                            $fallbackConfig,
+                            $taskType,
+                            $canonicalTask,
+                            $systemPrompt,
+                            $redactedInput,
+                            $requiredKeys,
+                            $fallbackOptions,
+                            $actor
+                        );
+                    } catch (RuntimeException $fallbackError) {
+                        $this->recordFailedTaskRun($tenantId, $actor, $taskType, $fallbackConfig, $promptVersion, $strictRedactedSummary, $fallbackError, null, false, $options);
+                        throw $fallbackError;
+                    }
+
                     if ($execResult['execution_mode'] !== 'LIVE_PROVIDER_API') {
                         $execResult['execution_mode'] = 'fallback_'.$execResult['execution_mode'];
                     }
                 } else {
-                    $this->recordFailedTaskRun($tenantId, $actor, $taskType, $providerConfig, $promptVersion, $redactedInput, $primaryError, null, false, $options);
+                    $this->recordFailedTaskRun($tenantId, $actor, $taskType, $providerConfig, $promptVersion, $strictRedactedSummary, $primaryError, null, false, $options);
                     throw $primaryError;
                 }
             } else {
-                $this->recordFailedTaskRun($tenantId, $actor, $taskType, $providerConfig, $redactedInput ? $promptVersion : null, $redactedInput, $primaryError, null, false, $options);
+                $this->recordFailedTaskRun($tenantId, $actor, $taskType, $providerConfig, $strictRedactedSummary ? $promptVersion : null, $strictRedactedSummary, $primaryError, null, false, $options);
                 throw $primaryError;
             }
         }
 
+        $effectiveRedactedSummary = (string) ($execResult['effective_redacted_input'] ?? $strictRedactedSummary);
         $structuredOutput = $execResult['structured_output'];
         if (in_array('contact', $requiredKeys, true) && ! array_key_exists('contact', $structuredOutput)) {
             if (array_key_exists('emails', $structuredOutput) || array_key_exists('phones', $structuredOutput)) {
@@ -647,7 +681,7 @@ class AiGatewayService
 
         if (! $schemaValid) {
             $schemaException = new RuntimeException("SCHEMA_VALIDATION_FAILED: Provider output for '{$taskType}' is missing required schema keys.", 422);
-            $this->recordFailedTaskRun($tenantId, $actor, $taskType, $activeProviderConfig, $promptVersion, $redactedInput, $schemaException, $structuredOutput, false, $options);
+            $this->recordFailedTaskRun($tenantId, $actor, $taskType, $activeProviderConfig, $promptVersion, $effectiveRedactedSummary, $schemaException, $structuredOutput, false, $options);
             throw $schemaException;
         }
 
@@ -659,7 +693,7 @@ class AiGatewayService
             $primaryProviderKey,
             $fallbackUsed,
             $promptVersion,
-            $redactedInput,
+            $effectiveRedactedSummary,
             $structuredOutput,
             $schemaValid,
             $estimatedCostMinor,
@@ -680,8 +714,8 @@ class AiGatewayService
                 'primary_provider_key' => $primaryProviderKey,
                 'retry_count' => $execResult['retry_count'],
                 'prompt_version' => $promptVersion?->version ?? 1,
-                'input_hash' => hash('sha256', $redactedInput),
-                'redacted_input_summary' => substr($redactedInput, 0, 500),
+                'input_hash' => hash('sha256', $effectiveRedactedSummary),
+                'redacted_input_summary' => substr($effectiveRedactedSummary, 0, 500),
                 'structured_output' => $structuredOutput,
                 'schema_valid' => $schemaValid,
                 'human_reviewed' => false,
@@ -721,15 +755,17 @@ class AiGatewayService
     /**
      * @param  array<int, string>  $requiredKeys
      * @param  array<string, mixed>  $options
-     * @return array{structured_output: array<string, mixed>, tokens_used: int, latency_ms: int, execution_mode: string, retry_count: int}
+     * @return array{structured_output: array<string, mixed>, tokens_used: int, latency_ms: int, execution_mode: string, retry_count: int, effective_redacted_input?: string}
      */
     private function invokeAdapterOrLocalAnalyzer(
         AiProviderConfig $config,
         string $taskType,
+        string $canonicalTask,
         string $systemPrompt,
         string $redactedInput,
         array $requiredKeys,
-        array $options
+        array $options,
+        ?User $actor = null
     ): array {
         $adapter = $this->getAdapter($config->provider_key);
         $requireLiveCredentials = (bool) ($options['require_live_credentials'] ?? ($config->settings['require_live_credentials'] ?? false));
@@ -738,8 +774,56 @@ class AiGatewayService
             return $adapter->executeStructuredTask($config, $taskType, $systemPrompt, $redactedInput, $requiredKeys, $options);
         }
 
-        if ($config->hasConfiguredCredentials() || $requireLiveCredentials) {
-            $result = $adapter->executeStructuredTask($config, $taskType, $systemPrompt, $redactedInput, $requiredKeys, $options);
+        if ($config->hasConfiguredCredentials() || $requireLiveCredentials || ! $config->redaction_enabled) {
+            $isCandidatePii = $this->isCandidatePiiTask($taskType, $canonicalTask, $options);
+            $externalPrompt = $this->redactPiiAndSecrets($redactedInput, true);
+
+            if ($isCandidatePii) {
+                $resolvedModel = (string) ($options['model_name'] ?? $config->model_name ?? '');
+                $eligibility = $config->evaluateCandidatePrivacyEligibility($taskType, $canonicalTask, $resolvedModel);
+
+                if (! $eligibility['eligible']) {
+                    $errorCode = (string) ($eligibility['error_code'] ?? 'EXTERNAL_AI_PRIVACY_ATTESTATION_REQUIRED');
+                    $errorMessage = (string) $eligibility['message'];
+
+                    $this->auditService->record(
+                        module: 'ai_gateway',
+                        action: 'ai.external_privacy_gate_blocked',
+                        outcome: 'DENIED',
+                        errorCode: $errorCode,
+                        entityType: 'ai_provider_config',
+                        entityId: (string) $config->id,
+                        metadata: [
+                            'provider_key' => $config->provider_key,
+                            'model_name' => $resolvedModel,
+                            'task_type' => $taskType,
+                            'canonical_task' => $canonicalTask,
+                            'attestation_summary' => $eligibility['attestation_summary'],
+                        ],
+                        tenantId: (int) $config->tenant_id,
+                        actorUserId: $actor ? (int) $actor->id : null,
+                    );
+
+                    throw new RuntimeException("{$errorCode}: {$errorMessage}", 422);
+                }
+
+                if ($canonicalTask === 'resume.extract') {
+                    $externalPrompt = isset($options['minimized_external_input']) && is_string($options['minimized_external_input'])
+                        ? $this->redactPiiAndSecrets($options['minimized_external_input'], true)
+                        : $this->contentAnalyzer->buildMinimizedRedactedExternalResumePrompt(
+                            $externalPrompt,
+                            is_array($options['local_baseline'] ?? null) ? $options['local_baseline'] : null
+                        );
+                }
+
+                if (isset($options['resume_data']) && is_array($options['resume_data'])) {
+                    $options['resume_data'] = $this->contentAnalyzer->sanitizeResumeDataForExternalMatch($options['resume_data']);
+                }
+            }
+
+            $result = $adapter->executeStructuredTask($config, $taskType, $systemPrompt, $externalPrompt, $requiredKeys, $options);
+            $result['effective_redacted_input'] = $externalPrompt;
+
             $config->update([
                 'connection_status' => AiProviderConfig::STATUS_CONNECTED,
                 'last_validated_at' => now(),
@@ -789,7 +873,8 @@ class AiGatewayService
     ): void {
         $parts = explode(':', $error->getMessage(), 2);
         $errorCode = trim($parts[0]) ?: 'AI_EXECUTION_FAILED';
-        $sanitizedMessage = substr(trim($parts[1] ?? $error->getMessage()), 0, 240);
+        $sanitizedMessage = $this->redactPiiAndSecrets(substr(trim($parts[1] ?? $error->getMessage()), 0, 240), true);
+        $safeRedactedInput = $this->redactPiiAndSecrets($redactedInput, true);
 
         $run = AiTaskRun::withoutGlobalScopes()->create([
             'uuid' => (string) Str::uuid(),
@@ -803,8 +888,8 @@ class AiGatewayService
             'primary_provider_key' => $config->provider_key,
             'retry_count' => (int) ($config->max_retries ?? 0),
             'prompt_version' => $promptVersion?->version ?? 1,
-            'input_hash' => hash('sha256', $redactedInput),
-            'redacted_input_summary' => substr($redactedInput, 0, 500),
+            'input_hash' => hash('sha256', $safeRedactedInput),
+            'redacted_input_summary' => substr($safeRedactedInput, 0, 500),
             'structured_output' => $rawOutput,
             'schema_valid' => $schemaValid,
             'human_reviewed' => false,
@@ -919,7 +1004,22 @@ class AiGatewayService
         $config->kill_switch_engaged = (bool) ($data['kill_switch_engaged'] ?? false);
         $config->is_enabled = (bool) ($data['is_enabled'] ?? true);
         $config->monthly_budget_minor = min($requestedBudget, $globalCap);
-        $config->redaction_enabled = $mandatoryRedaction ? true : (bool) ($data['redaction_enabled'] ?? true);
+
+        if (array_key_exists('redaction_enabled', $data)) {
+            $config->redaction_enabled = (bool) $data['redaction_enabled'];
+        } elseif ($config->redaction_enabled === null) {
+            $config->redaction_enabled = $mandatoryRedaction ? true : true;
+        }
+
+        $settings = is_array($config->settings) ? $config->settings : [];
+        if (isset($data['settings']) && is_array($data['settings'])) {
+            $settings = array_merge($settings, $data['settings']);
+        }
+        if (array_key_exists('privacy_attestation', $data)) {
+            $settings['privacy_attestation'] = $data['privacy_attestation'];
+        }
+        $config->settings = $settings;
+
         $config->save();
 
         $this->auditService->record(
@@ -934,6 +1034,10 @@ class AiGatewayService
                 'monthly_budget_minor' => $config->monthly_budget_minor,
                 'credential_updated' => ! empty($data['api_key']),
                 'fallback_provider_key' => $config->fallback_provider_key,
+                'redaction_enabled' => $config->redaction_enabled,
+                'privacy_attestation_status' => is_array($settings['privacy_attestation'] ?? null)
+                    ? ($settings['privacy_attestation']['status'] ?? null)
+                    : null,
             ],
             tenantId: (int) $config->tenant_id,
             actorUserId: (int) $actor->id,
@@ -1056,9 +1160,9 @@ class AiGatewayService
     public function redactPiiAndSecrets(string $text, bool $redactEmail = true): string
     {
         $redacted = $redactEmail
-            ? (string) preg_replace('/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/', '[REDACTED_EMAIL]', $text)
-            : $text;
-        $redacted = (string) preg_replace('/\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/', '[REDACTED_SSN]', $redacted);
+            ? $this->contentAnalyzer->redactDirectContactIdentifiers($text)
+            : (string) preg_replace('/\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/', '[REDACTED_SSN]', $text);
+
         $redacted = (string) preg_replace('/(sk-[a-zA-Z0-9\-_]{10,}|github_pat_[a-zA-Z0-9_]+|AIza[0-9A-Za-z\-_]{20,})/', '[REDACTED_SECRET]', $redacted);
 
         return $redacted;

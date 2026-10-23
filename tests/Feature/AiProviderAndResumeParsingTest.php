@@ -194,12 +194,50 @@ class AiProviderAndResumeParsingTest extends TestCase
             'api_key' => 'sk-ant-test-primary-key',
             'max_retries' => 0,
             'monthly_budget_minor' => 50000,
+            'privacy_attestation' => [
+                'status' => 'VERIFIED',
+                'attestation_source' => 'TENANT_LEGAL_DPO_REGISTRY',
+                'dpa_reference' => 'DPA-ANTHROPIC-2026-ACME-01',
+                'zdr_or_retention_reference' => 'ZDR-ANTHROPIC-ORG-ZERO-2026',
+                'verifier_identifier' => 'dpo@acme-demo.test',
+                'verified_at' => now()->subDays(5)->toIso8601String(),
+                'expires_at' => now()->addMonths(6)->toIso8601String(),
+                'approved_tasks' => ['resume.extract', 'candidate.match', 'candidate.match.explanation'],
+                'approved_models' => ['claude-3-7-sonnet', 'claude-3-5-sonnet', 'claude-3-5-haiku'],
+                'provider_privacy_settings' => [
+                    'training_opt_out_verified' => true,
+                    'allow_model_training' => false,
+                    'zdr_enabled' => true,
+                    'retention_days' => 0,
+                    'commercial_terms_verified' => true,
+                    'zdr_org_enabled' => true,
+                ],
+            ],
         ], $this->adminA);
 
         $aiService->updateProviderConfig($gemini, [
             'api_key' => 'AIzaSyTestFallbackGeminiKey',
             'max_retries' => 0,
             'monthly_budget_minor' => 50000,
+            'privacy_attestation' => [
+                'status' => 'VERIFIED',
+                'attestation_source' => 'TENANT_LEGAL_DPO_REGISTRY',
+                'dpa_reference' => 'DPA-GOOGLE-CLOUD-2026-ACME-02',
+                'zdr_or_retention_reference' => 'ZDR-GEMINI-PAID-LOGGING-OFF-2026',
+                'verifier_identifier' => 'dpo@acme-demo.test',
+                'verified_at' => now()->subDays(5)->toIso8601String(),
+                'expires_at' => now()->addMonths(6)->toIso8601String(),
+                'approved_tasks' => ['resume.extract', 'candidate.match', 'candidate.match.explanation'],
+                'approved_models' => ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+                'provider_privacy_settings' => [
+                    'training_opt_out_verified' => true,
+                    'allow_model_training' => false,
+                    'zdr_enabled' => true,
+                    'retention_days' => 0,
+                    'billing_tier' => 'PAID_ENTERPRISE',
+                    'project_logging_disabled' => true,
+                ],
+            ],
         ], $this->adminA);
 
         $route = AiTaskRoute::withoutGlobalScopes()

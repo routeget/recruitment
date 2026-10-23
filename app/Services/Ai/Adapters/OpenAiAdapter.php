@@ -60,6 +60,7 @@ class OpenAiAdapter extends AbstractHttpProviderAdapter
                 ->post($endpoint, [
                     'model' => $config->model_name ?: 'gpt-4.1',
                     'max_tokens' => 16,
+                    'store' => false,
                     'response_format' => ['type' => 'json_object'],
                     'messages' => [
                         ['role' => 'user', 'content' => 'Return {"ok":true} as JSON.'],
@@ -136,6 +137,7 @@ class OpenAiAdapter extends AbstractHttpProviderAdapter
                 ->post($endpoint, [
                     'model' => $model,
                     'max_tokens' => $maxTokens,
+                    'store' => false,
                     'response_format' => ['type' => 'json_object'],
                     'messages' => [
                         ['role' => 'system', 'content' => $systemPrompt."\n\n".$schemaHint],

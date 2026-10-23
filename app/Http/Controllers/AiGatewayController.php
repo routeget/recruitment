@@ -103,6 +103,7 @@ class AiGatewayController extends Controller
             'is_enabled' => ['nullable', 'boolean'],
             'monthly_budget_minor' => ['required', 'integer', 'min:0'],
             'redaction_enabled' => ['nullable', 'boolean'],
+            'privacy_attestation' => ['nullable', 'array'],
         ]);
 
         try {

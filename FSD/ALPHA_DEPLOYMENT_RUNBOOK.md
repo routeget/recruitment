@@ -176,3 +176,54 @@ php artisan platform:admin-revoke \
 
 - **Last-Super-Admin Lockout Safeguard:** Both `platform:admin-revoke` and the web `/platform-admin/admins/{id}/revoke` endpoint refuse to revoke or suspend the final active real Platform Super Admin (`LAST_SUPERADMIN_PROTECTION`). Provision a replacement real Platform Super Admin first before revoking the outgoing administrator.
 
+---
+
+## 6. PA-02 Privacy Hardening & Operational Runbook (`PA-02`)
+
+### 6.1 Persistent Supervised Queue Worker (`recruitment-queue-worker.service`)
+
+Asynchronous jobs (`ProcessResumeParsingJob`, `DeliverSignedWebhookJob`) are processed by a persistent user-level `systemd` service (`/home/career/.config/systemd/user/recruitment-queue-worker.service`, reference unit committed at `deploy/systemd/recruitment-queue-worker.service`) with user lingering enabled (`Linger=yes`):
+
+```bash
+systemctl --user status recruitment-queue-worker.service
+systemctl --user restart recruitment-queue-worker.service
+```
+
+- **Command:** `/usr/bin/php8.4 /home/career/htdocs/career.tringers.com/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600 --timeout=120`
+- **Auto-Restart:** `Restart=always`, `RestartSec=5`.
+- **Log Output:** `/home/career/htdocs/career.tringers.com/storage/logs/queue-worker.log`.
+- **Scheduler Output:** All scheduled commands in `routes/console.php` append output to `/home/career/htdocs/career.tringers.com/storage/logs/scheduler.log`:
+  - `recruitment:process-scheduled-parse-retries` (every 5 minutes): transitions retry-exhausted jobs (`attempt_count >= max_attempts`) to `FAILED` (`MAX_RETRIES_EXHAUSTED`), cancels queued/retry-scheduled jobs for non-consented or DSAR-restricted/anonymized candidates (`CONSENT_OR_DSAR_BLOCKED` / `DSAR_ANONYMIZED`), and dispatches eligible retries.
+  - `recruitment:expire-past-due-jobs` (hourly).
+  - `recruitment:enforce-privacy-retention` (daily at `02:30`): evaluates `retention_expires_at <= now()` (with fallback to `updated_at` cutoff when `retention_expires_at` is null), excludes candidates under `LEGAL_HOLD` / `DISPUTE_ACTIVE` or `legal_hold` / `active_dispute` / `statutory_hold` tags, and idempotently minimizes completed, reconciled `HrHandover` snapshots.
+  - `recruitment:audit-backup-retention` (daily at `03:00`, dry-run by default).
+
+### 6.2 Secret & Backup File Permissions (`0700` / `0600`)
+
+All environment secret files and database SQL dumps must maintain strict owner-only permissions (`career:career`):
+
+- `/home/career/htdocs/career.tringers.com/.env` -> `0600`
+- `/home/career/backups` and `/home/career/backups/databases` -> `0700`
+- `/home/career/backups/.env.backup.*` and `/home/career/backups/databases/*.sql` -> `0600`
+
+### 6.3 Database Backup Inventory, 14-Day Rolling Retention & Post-Restore DSAR Replay Procedure
+
+- **Current Verified Baseline Backup (`PA-02`):**
+  - `/home/career/backups/databases/recruitment_pa02_20261023_095500.sql` (`185,475` bytes, `0600`, `sha256` prefix `ac65098c30028240...`, 58 tables, 14 migrations including `2026_10_23_000011_make_resume_parse_jobs_document_nullable_for_dsar_scrubbing`).
+  - Verified via full isolated restoration rehearsal into a temporary `--skip-networking` MariaDB 12.3.3 instance (`restored_table_count = 58`, `restored_migration_count = 14`, `resume_parse_jobs.candidate_document_id` `is_nullable = YES`).
+- **Backup Retention Policy:**
+  - Rolling retention window: **14 days** (`BACKUP_RETENTION_DAYS=14`), audited daily by `php artisan recruitment:audit-backup-retention` (dry-run by default).
+  - Safeguards: Never deletes the newest valid recovery backup; blocks `--prune-approved` pruning whenever any candidate has an active `LEGAL_HOLD` or `DISPUTE_ACTIVE` status.
+- **Mandatory Post-Restore DSAR & Privacy Replay Procedure:**
+  - Never edit historical SQL backup files in place.
+  - Whenever a database backup is restored during disaster recovery, before re-opening public or tenant traffic:
+    1. Run `php artisan migrate --force` to apply all current schema migrations.
+    2. Re-apply any `candidate_dsar_anonymized` events recorded after the backup timestamp by invoking `CandidateAndApplicationService::updateCandidateConsentAndDsar(..., ['consent_given' => false, 'dsar_status' => 'ANONYMIZED'])`.
+    3. Run `php artisan recruitment:process-scheduled-parse-retries` and `php artisan recruitment:enforce-privacy-retention` to cancel any stale retries and minimize completed HR handover snapshots.
+
+### 6.4 Fail-Closed External AI Privacy & Zero-Data-Retention (ZDR) Gate
+
+- External cloud AI providers (`claude`, `gemini`, `openai`) are **blocked fail-closed** for all candidate PII tasks (`resume.extract`, `resume_extraction`, `candidate.match`, `candidate.match.explanation`, `candidate_screening`) unless `AiProviderConfig::evaluateCandidatePrivacyEligibility()` verifies a structured `settings.privacy_attestation` with `status = 'VERIFIED'`, non-empty `attestation_source`, `dpa_reference`, `zdr_or_retention_reference`, `verifier_identifier`, `verified_at`, un-expired `expires_at`, matching `approved_tasks` and `approved_models`, `redaction_enabled = true`, and non-contradictory `provider_privacy_settings` (`allow_model_training = false`, `training_opt_out_verified = true`, `zdr_enabled = true`, `retention_days = 0`, plus `store_completions = false` for OpenAI, `billing_tier = PAID_ENTERPRISE|VERTEX_AI_ENTERPRISE` & `project_logging_disabled = true` for Gemini, and `commercial_terms_verified = true` & `zdr_org_enabled = true` for Claude).
+- Outbound OpenAI Chat Completions requests explicitly include `"store": false`.
+- Outbound external AI prompts for resume extraction and matching strip direct contact identifiers (`[REDACTED_EMAIL]`, `[REDACTED_PHONE]`, `[REDACTED_URL]`, `[REDACTED_SSN]`, `[REDACTED_SECRET]`) and wrap minimized qualifications in `<minimized_candidate_qualifications>`, while locally extracted contact fields are merged back into the candidate's structured profile locally.
+

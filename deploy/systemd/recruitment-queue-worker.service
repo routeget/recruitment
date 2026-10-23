@@ -1,0 +1,16 @@
+[Unit]
+Description=Recruitment AI Laravel Queue Worker
+After=network.target redis-server.service mariadb.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/career/htdocs/career.tringers.com
+ExecStart=/usr/bin/php8.4 /home/career/htdocs/career.tringers.com/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600 --timeout=120
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/career/htdocs/career.tringers.com/storage/logs/queue-worker.log
+StandardError=append:/home/career/htdocs/career.tringers.com/storage/logs/queue-worker.log
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

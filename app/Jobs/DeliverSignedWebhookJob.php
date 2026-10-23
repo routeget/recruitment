@@ -12,6 +12,7 @@ use App\Services\PlatformConfigService;
 use App\Services\TenantContextService;
 use App\Support\WebhookSsrfGuard;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -20,7 +21,7 @@ use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use Throwable;
 
-class DeliverSignedWebhookJob implements ShouldQueue
+class DeliverSignedWebhookJob implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -37,11 +38,16 @@ class DeliverSignedWebhookJob implements ShouldQueue
         public readonly int $webhookDeliveryId,
     ) {}
 
+    public function uniqueId(): string
+    {
+        return 'webhook-delivery-'.$this->webhookDeliveryId;
+    }
+
     public function handle(WebhookSsrfGuard $ssrfGuard, AuditService $audit): void
     {
         /** @var WebhookDelivery|null $delivery */
         $delivery = WebhookDelivery::withoutGlobalScopes()->find($this->webhookDeliveryId);
-        if ($delivery === null || $delivery->status === 'DELIVERED') {
+        if ($delivery === null || in_array($delivery->status, ['DELIVERED', 'FAILED_PERMANENT'], true)) {
             return;
         }
 

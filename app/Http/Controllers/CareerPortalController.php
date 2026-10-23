@@ -324,6 +324,8 @@ class CareerPortalController extends Controller
         }
 
         $securityScan = $analyzer->detectAndNeutralizePromptInjection($extraction['text']);
+        $localBaseline = $analyzer->extractStructuredResume($securityScan['clean_text']);
+        $minimizedExternalInput = $analyzer->buildMinimizedRedactedExternalResumePrompt($securityScan['clean_text'], $localBaseline);
 
         try {
             $run = $aiGateway->executeTask(
@@ -336,14 +338,19 @@ class CareerPortalController extends Controller
                     'preserve_candidate_contact' => true,
                     'entity_type' => 'PublicResumePrefill',
                     'entity_id' => $job->id,
+                    'minimized_external_input' => $minimizedExternalInput,
+                    'local_baseline' => $localBaseline,
                 ]
             );
             $parsed = (array) ($run->structured_output ?? []);
         } catch (Throwable) {
-            $parsed = $analyzer->extractStructuredResume($securityScan['clean_text']);
+            $parsed = $localBaseline;
         }
 
         $fullName = trim((string) ($parsed['full_name'] ?? ''));
+        if ($fullName === '' || str_contains($fullName, '[REDACTED_')) {
+            $fullName = trim((string) ($localBaseline['full_name'] ?? ''));
+        }
         $firstName = trim((string) ($parsed['first_name'] ?? ''));
         $lastName = trim((string) ($parsed['last_name'] ?? ''));
         if ($fullName !== '' && ($firstName === '' || $lastName === '')) {
@@ -352,14 +359,23 @@ class CareerPortalController extends Controller
             $lastName = implode(' ', $parts);
         }
 
+        $resolvedEmail = (string) ($parsed['contact']['email'] ?? ($parsed['emails'][0] ?? ''));
+        if ($resolvedEmail === '' || $resolvedEmail === '[REDACTED_EMAIL]') {
+            $resolvedEmail = (string) ($localBaseline['contact']['email'] ?? '');
+        }
+        $resolvedPhone = (string) ($parsed['contact']['phone'] ?? ($parsed['phones'][0] ?? ''));
+        if ($resolvedPhone === '' || $resolvedPhone === '[REDACTED_PHONE]') {
+            $resolvedPhone = (string) ($localBaseline['contact']['phone'] ?? '');
+        }
+
         $prefill = [
             'first_name' => $firstName,
             'last_name' => $lastName,
             'full_name' => $fullName,
-            'email' => $parsed['contact']['email'] ?? ($parsed['emails'][0] ?? ''),
-            'phone' => $parsed['contact']['phone'] ?? ($parsed['phones'][0] ?? ''),
-            'location_city' => $parsed['contact']['location_city'] ?? ($parsed['location'] ?? ''),
-            'country_code' => $parsed['contact']['country_code'] ?? ($parsed['country_code'] ?? 'US'),
+            'email' => $resolvedEmail,
+            'phone' => $resolvedPhone,
+            'location_city' => $parsed['contact']['location_city'] ?? ($parsed['location'] ?? ($localBaseline['contact']['location_city'] ?? '')),
+            'country_code' => $parsed['contact']['country_code'] ?? ($parsed['country_code'] ?? ($localBaseline['contact']['country_code'] ?? 'US')),
             'current_title' => $parsed['current_title'] ?? ($parsed['work_experience'][0]['job_title'] ?? ($parsed['work_experience'][0]['title'] ?? '')),
             'years_experience' => $parsed['years_experience'] ?? ($parsed['total_years_experience'] ?? 0),
             'skills' => implode(', ', (array) ($parsed['skills'] ?? [])),
